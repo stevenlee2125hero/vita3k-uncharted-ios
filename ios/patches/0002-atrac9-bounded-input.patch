@@ -145,3 +145,27 @@
 +{
 +	return DecodeBounded(handle, buffer, bytes, (unsigned char*)pcm, used);
 +}
+--- a/C/src/utility.c
++++ b/C/src/utility.c
+@@ -6,6 +6,7 @@
+ 
+ unsigned int BitReverse32(unsigned int value, int bitCount)
+ {
++	if (bitCount <= 0) return 0;
+ 	value = ((value & 0xaaaaaaaa) >> 1) | ((value & 0x55555555) << 1);
+ 	value = ((value & 0xcccccccc) >> 2) | ((value & 0x33333333) << 2);
+ 	value = ((value & 0xf0f0f0f0) >> 4) | ((value & 0x0f0f0f0f) << 4);
+@@ -16,8 +17,11 @@
+ 
+ int SignExtend32(int value, int bits)
+ {
+-	const int shift = 8 * sizeof(int) - bits;
+-	return (value << shift) >> shift;
++	if (bits <= 0) return 0;
++	if (bits >= 32) return value;
++	const unsigned int masked = (unsigned int)value & ((1u << bits) - 1);
++	return (masked & (1u << (bits - 1)))
++		? (int)((long long)masked - (1LL << bits)) : (int)masked;
+ }
+ 
+ short Clamp16(int value)

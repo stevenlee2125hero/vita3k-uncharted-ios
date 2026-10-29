@@ -1,6 +1,7 @@
 // GPL-2.0-or-later. Synthetic inputs only; no commercial audio data.
 #include <bit_reader.h>
 #include <libatrac9.h>
+#include <utility.h>
 #include <assert.h>
 #include <setjmp.h>
 #include <stdio.h>
@@ -32,6 +33,12 @@ static void test_bits(void) {
 }
 
 int main(void) {
+    assert(BitReverse32(1, 0) == 0);
+    assert(BitReverse32(1, 1) == 1);
+    assert(BitReverse32(1, 32) == 0x80000000u);
+    assert(SignExtend32(0xff, 8) == -1);
+    assert(SignExtend32(0x7f, 8) == 127);
+    assert(SignExtend32(0, 0) == 0);
     test_bits();
     int used = 123;
     short pcm[2048] = {0};
