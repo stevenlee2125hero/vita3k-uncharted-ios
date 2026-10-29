@@ -1225,8 +1225,8 @@ void VKState::late_init(const Config &cfg, const std::string_view game_id, MemSt
     // stalls guest threads for seconds or kills the process when a forwarded
     // signal is mishandled. Spurious dirty marks from those merged pages also
     // made titles re-sample render targets from never-synced guest RAM.
-    // Disable fault-based surface tracking; with memory mapping unavailable
-    // here, surface sync is inert, so this only removes the traps.
+    // Disable fault-based surface tracking; unmapped surface synchronization
+    // instead uses explicit staging readback and CPU-side hashing.
     surface_cache.can_mprotect_mapped_memory = false;
     LOG_INFO("iOS: fault-based surface dirty tracking disabled (traps are debugger-delivered)");
     // Same debugger-trap issue applies to BufferTrapping's mprotect calls

@@ -3285,7 +3285,7 @@ void VKSurfaceCache::perform_post_surface_sync(const MemState &mem, const PostSu
         return;
 
     if (reads_copy_buffer)
-        vkutil::allocator.invalidateAllocation(surface->copy_buffer->allocation, 0, VK_WHOLE_SIZE);
+        state.allocator.invalidateAllocation(surface->copy_buffer->allocation, 0, VK_WHOLE_SIZE);
 
     const uint32_t pixel_stride = (surface->stride_bytes * 8) / gxm::bits_per_pixel(surface->format);
     uint8_t *pixels = surface->data.cast<uint8_t>().get(mem);
