@@ -3259,6 +3259,15 @@ void VKSurfaceCache::perform_post_surface_sync(const MemState &mem, const PostSu
         return;
 
     const std::lock_guard<std::mutex> lock(post_sync_mutex);
+
+    if (surface->generation != request.generation) {
+        static std::atomic<uint32_t> dropped{ 0 };
+        const uint32_t count = dropped.fetch_add(1, std::memory_order_relaxed) + 1;
+        if (count <= 8 || count % 1000 == 0)
+            LOG_WARN("Surface write-back dropped: its surface was destroyed before the copy finished ({} so far)", count);
+        return;
+    }
+
 #ifdef VITA3K_PLATFORM_IOS
     const std::lock_guard allocation_lock(mem.generation_mutex);
     const uint32_t guest_stride = (surface->stride_bytes * 8) / gxm::bits_per_pixel(surface->format);
@@ -3270,14 +3279,6 @@ void VKSurfaceCache::perform_post_surface_sync(const MemState &mem, const PostSu
         return;
     }
 #endif
-    if (surface->generation != request.generation) {
-        static std::atomic<uint32_t> dropped{ 0 };
-        const uint32_t count = dropped.fetch_add(1, std::memory_order_relaxed) + 1;
-        if (count <= 8 || count % 1000 == 0)
-            LOG_WARN("Surface write-back dropped: its surface was destroyed before the copy finished ({} so far)", count);
-        return;
-    }
-
     const bool reads_copy_buffer = surface_sync_needs_u4u4u4u4_repack(*surface) || surface_sync_needs_f10_repack(*surface)
         || surface_sync_needs_se5_repack(*surface) || format_need_additional_memory(surface->format) || !state.features.enable_memory_mapping;
     if (reads_copy_buffer && (!surface->copy_buffer || !surface->copy_buffer->mapped_data))

@@ -95,7 +95,11 @@ static std::vector<uint32_t> compile(SyntheticProgram &fixture, bool mapping, co
     options.platform = spirv_cross::CompilerMSL::Options::iOS;
     options.set_msl_version(2, 3);
     msl.set_msl_options(options);
-    require(!msl.compile().empty(), "SPIRV-Cross failed to emit Metal source");
+    const auto source = msl.compile();
+    require(!source.empty(), "SPIRV-Cross failed to emit Metal source");
+    std::ofstream metal_file(directory + "/" + name + ".metal");
+    metal_file << source;
+    require(bool(metal_file), "could not save generated Metal source");
     return result.spirv;
 }
 

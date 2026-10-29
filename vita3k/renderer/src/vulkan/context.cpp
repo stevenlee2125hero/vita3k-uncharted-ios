@@ -648,7 +648,7 @@ void VKContext::stop_recording(const SceGxmNotification &notif1, const SceGxmNot
     // remember which part of the colour surface this scene's draws could have touched (for write-back bounds)
     state.surface_cache.note_scene_draw_rect(draw_rect_x0, draw_rect_y0, draw_rect_x1, draw_rect_y1);
     ColorSurfaceCacheInfo *surface_info = nullptr;
-    if (state.features.enable_memory_mapping && !state.disable_surface_sync && submit)
+    if (state.features.can_surface_sync() && !state.disable_surface_sync && submit)
         surface_info = state.surface_cache.perform_surface_sync();
 
     prerender_cmd.end();
@@ -683,7 +683,7 @@ void VKContext::stop_recording(const SceGxmNotification &notif1, const SceGxmNot
         state.frame().destroy_queue.add_buffer(old_ring);
     vertex_ring_retired.clear();
 
-    if (state.features.enable_memory_mapping) {
+    if (state.features.can_surface_sync()) {
         // send it to the wait queue
         state.request_queue.push(FenceWaitRequest{ fence, state.submit_serial });
 

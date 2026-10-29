@@ -433,7 +433,7 @@ uint32_t get_compressed_size(SceGxmTextureBaseFormat base_format, uint32_t width
  * \param block_storage     pointer to the block to decompress.
  * \param image             pointer to image where the decompressed pixel data should be stored.
  **/
-static void decompress_block_bc1(const uint8_t *block_storage, uint32_t *image) {
+static void decompress_block_bc_color(const uint8_t *block_storage, uint32_t *image, bool allow_transparency) {
     std::uint16_t n0 = static_cast<std::uint16_t>((block_storage[1] << 8) | block_storage[0]);
     std::uint16_t n1 = static_cast<std::uint16_t>((block_storage[3] << 8) | block_storage[2]);
 
@@ -461,7 +461,7 @@ static void decompress_block_bc1(const uint8_t *block_storage, uint32_t *image) 
         0
     };
 
-    if (n0 > n1) {
+    if (n0 > n1 || !allow_transparency) {
         std::uint8_t r2 = static_cast<uint8_t>((2 * r0 + r1 + 1) / 3);
         std::uint8_t r3 = static_cast<uint8_t>((2 * r1 + r0 + 1) / 3);
         std::uint8_t g2 = static_cast<uint8_t>((2 * g0 + g1 + 1) / 3);
@@ -483,6 +483,10 @@ static void decompress_block_bc1(const uint8_t *block_storage, uint32_t *image) 
     const std::uint32_t indices = block_storage[0] | (block_storage[1] << 8) | (block_storage[2] << 16) | (static_cast<std::uint32_t>(block_storage[3]) << 24);
     for (int i = 0; i < 16; ++i)
         image[i] = colors[(indices >> (2 * i)) & 0x03];
+}
+
+static void decompress_block_bc1(const uint8_t *block_storage, uint32_t *image) {
+    decompress_block_bc_color(block_storage, image, true);
 }
 
 /**
@@ -600,7 +604,7 @@ static void decompress_block_alpha_signed(const uint8_t *block_storage, uint8_t 
  * \param image             pointer to image where the decompressed pixel data should be stored.
  **/
 static void decompress_block_bc2(const uint8_t *block_storage, uint32_t *image) {
-    decompress_block_bc1(block_storage + 8, image);
+    decompress_block_bc_color(block_storage + 8, image, false);
 
     for (int i = 0; i < 8; i++) {
         image[2 * i] = (((block_storage[i] & 0x0F) | ((block_storage[i] & 0x0F) << 4)) << 24) | (image[2 * i] & 0x00FFFFFF);
@@ -615,7 +619,7 @@ static void decompress_block_bc2(const uint8_t *block_storage, uint32_t *image) 
  * \param image             pointer to image where the decompressed pixel data should be stored.
  **/
 static void decompress_block_bc3(const uint8_t *block_storage, uint32_t *image) {
-    decompress_block_bc1(block_storage + 8, image);
+    decompress_block_bc_color(block_storage + 8, image, false);
     decompress_block_alpha(block_storage, reinterpret_cast<std::uint8_t *>(image), 3, 4);
 }
 
@@ -673,7 +677,7 @@ void decompress_bc_image(uint32_t width, uint32_t height, const uint8_t *block_s
     const uint32_t block_count_x = (width + 3) / 4;
     const uint32_t block_count_y = (height + 3) / 4;
     const uint32_t block_size = (format_id != 1 && format_id != 4 && format_id != 5) ? 16 : 8;
-    const uint32_t line_size = block_count_x * 4;
+    const uint32_t line_size = width;
 
     auto decompress_bcn = [=, &block_storage]<typename T, typename F>(T _, F decompress_func) {
         T temp_block_result[16] = {};
@@ -684,8 +688,10 @@ void decompress_bc_image(uint32_t width, uint32_t height, const uint8_t *block_s
                 decompress_func(block_storage, temp_block_result);
 
                 const uint32_t offset = j * 4 * line_size + i * 4;
-                for (uint32_t row = 0; row < 4; row++)
-                    memcpy(&img[offset + row * line_size], &temp_block_result[row * 4], 4 * sizeof(T));
+                const uint32_t rows = std::min(4u, height - j * 4);
+                const uint32_t columns = std::min(4u, width - i * 4);
+                for (uint32_t row = 0; row < rows; row++)
+                    memcpy(&img[offset + row * line_size], &temp_block_result[row * 4], columns * sizeof(T));
 
                 block_storage += block_size;
             }

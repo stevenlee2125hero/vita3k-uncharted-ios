@@ -33,3 +33,6 @@ add_executable(unmapped_readback_tests UnmappedReadbackTests.cpp)
 target_compile_features(unmapped_readback_tests PRIVATE cxx_std_17)
 target_include_directories(unmapped_readback_tests PRIVATE ../../vita3k/renderer/include)
 add_test(NAME unmapped_readback_tests COMMAND unmapped_readback_tests)
+
+find_package(Python3 REQUIRED COMPONENTS Interpreter)
+add_test(NAME texture_formats COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/../../tools/test_texture_formats.py")
