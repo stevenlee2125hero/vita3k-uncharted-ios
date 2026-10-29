@@ -2217,8 +2217,6 @@ std::vector<Vita3KIOSGameEntry> native_games(EmuEnvState &emuenv) {
 
 std::string restart_setting_name(config::RestartRequiredSetting setting) {
     switch (setting) {
-    case config::RestartRequiredSetting::Modules:
-        return "modules";
     case config::RestartRequiredSetting::CpuOpt:
         return "CPU optimisation";
     case config::RestartRequiredSetting::ResolutionMultiplier:
@@ -2237,6 +2235,10 @@ std::string restart_setting_name(config::RestartRequiredSetting setting) {
         return "memory mapping";
     case config::RestartRequiredSetting::ValidationLayer:
         return "validation layer";
+    case config::RestartRequiredSetting::AccurateThreadScheduling:
+        return "accurate thread scheduling";
+    case config::RestartRequiredSetting::GuestCores:
+        return "guest CPU cores";
     }
     return "unknown setting";
 }
