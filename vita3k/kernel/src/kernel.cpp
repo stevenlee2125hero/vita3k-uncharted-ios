@@ -66,13 +66,16 @@ void clear_current_thread_state();
 struct ThreadParams {
     KernelState *kernel = nullptr;
     SceUID thid = SCE_KERNEL_ERROR_ILLEGAL_THREAD_ID;
+    SDL_Semaphore *started = nullptr;
 };
 
 static int SDLCALL thread_function(void *data) {
     assert(data != nullptr);
     const ThreadParams params = *static_cast<const ThreadParams *>(data);
     delete static_cast<ThreadParams *>(data);
-    const ThreadStatePtr thread = params.kernel->get_thread(params.thid);
+    params.kernel->running_thread_bodies.fetch_add(1, std::memory_order_acq_rel);
+    SDL_SignalSemaphore(params.started);
+    ThreadStatePtr thread = params.kernel->get_thread(params.thid);
     set_current_thread_state(params.thid, thread);
 #ifdef TRACY_ENABLE
     if (!thread->name.empty()) {
@@ -87,10 +90,25 @@ static int SDLCALL thread_function(void *data) {
     const uint32_t r0 = read_reg(*thread->cpu, 0);
     clear_current_thread_state();
 
+    const SceUID id = thread->id;
+    const int core = get_processor_id(*thread->cpu);
+    params.kernel->untrack_thread_for_diagnostics(id);
+    ThreadStatePtr map_ref;
     {
-        std::lock_guard<std::mutex> lock(params.kernel->mutex);
-        params.kernel->threads.erase(thread->id);
-        params.kernel->corenum_allocator.free_corenum(get_processor_id(*thread->cpu));
+        const std::lock_guard<std::mutex> lock(params.kernel->mutex);
+        const auto it = params.kernel->threads.find(id);
+        if (it != params.kernel->threads.end()) {
+            map_ref = std::move(it->second);
+            params.kernel->threads.erase(it);
+        }
+        params.kernel->corenum_allocator.free_corenum(core);
+    }
+    // Release guest stacks/JIT ownership before teardown can reset MemState.
+    map_ref.reset();
+    thread.reset();
+    {
+        const std::lock_guard<std::mutex> lock(params.kernel->mutex);
+        params.kernel->running_thread_bodies.fetch_sub(1, std::memory_order_acq_rel);
         params.kernel->thread_deleted_cond.notify_all();
     }
 
@@ -186,20 +204,25 @@ ThreadStatePtr KernelState::create_thread(MemState &mem, const char *name, Ptr<c
     {
         const std::lock_guard<std::mutex> lock(mutex);
         threads.emplace(thread->id, thread);
+    }
     {
         const std::lock_guard<std::mutex> snapshot_lock(thread_snapshot_mutex);
         diagnostic_thread_snapshot.emplace(thread->id, thread);
-    }
     }
     thread_create_counter.fetch_add(1, std::memory_order_relaxed);
 
     auto *params = new ThreadParams;
     params->kernel = this;
     params->thid = thread->id;
-    SDL_Thread *const host_thread = SDL_CreateThread(&thread_function, thread->name.c_str(), params);
+    params->started = SDL_CreateSemaphore(0);
+    SDL_Semaphore *const started = params->started;
+    SDL_Thread *const host_thread = started ? SDL_CreateThread(&thread_function, thread->name.c_str(), params) : nullptr;
     if (!host_thread) {
         LOG_ERROR("Failed to create the host thread for {}: {}", thread->name, SDL_GetError());
+        if (started)
+            SDL_DestroySemaphore(started);
         delete params;
+        untrack_thread_for_diagnostics(thread->id);
         {
             const std::lock_guard<std::mutex> lock(mutex);
             threads.erase(thread->id);
@@ -208,6 +231,8 @@ ThreadStatePtr KernelState::create_thread(MemState &mem, const char *name, Ptr<c
         }
         return nullptr;
     }
+    SDL_WaitSemaphore(started);
+    SDL_DestroySemaphore(started);
     SDL_DetachThread(host_thread);
 
     return thread;
@@ -243,7 +268,7 @@ void KernelState::process_exit() {
 
     // a thread created during the exit joins the map after any single pass so keep asking new ones until it is empty
     std::unordered_set<SceUID> asked;
-    while (!threads.empty()) {
+    while (!threads.empty() || running_thread_bodies.load(std::memory_order_acquire) != 0) {
         for (auto &[id, thread] : threads) {
             if (asked.insert(id).second)
                 thread->exit_delete(false);

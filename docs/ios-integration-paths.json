@@ -83,7 +83,7 @@
     "vita3k/util/src/logging.cpp",
     "vita3k/vkutil/include/vkutil/vkutil.h"
   ],
-  "unresolved": [
+  "initial_conflicts": [
     [
       "CMakeLists.txt",
       "merge conflict"
@@ -216,5 +216,6 @@
       "vita3k/vkutil/include/vkutil/vkutil.h",
       "merge conflict"
     ]
-  ]
+  ],
+  "resolution_record": "ios-conflict-resolution.json; final commits are authoritative"
 }

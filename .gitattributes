@@ -15,3 +15,6 @@ src/external/*	linguist-vendored
 *.sh			eol=lf
 
 *.bat			eol=crlf
+
+# Diff context lines intentionally contain a leading space.
+*.patch whitespace=-blank-at-eol
