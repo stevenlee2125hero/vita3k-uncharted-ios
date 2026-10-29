@@ -1,5 +1,5 @@
 from pathlib import Path
-import hashlib,json,plistlib,struct,sys,uuid,zipfile
+import hashlib,json,os,plistlib,struct,sys,uuid,zipfile
 p=Path(sys.argv[1])
 with zipfile.ZipFile(p) as z:
     assert z.testzip() is None
@@ -26,6 +26,8 @@ with zipfile.ZipFile(p) as z:
     assert not any('/_CodeSignature/' in n or n.endswith('embedded.mobileprovision') for n in z.namelist())
     provenance=z.read(base+'/Uncharted-Provenance.txt').decode()
     assert 'PLUS_CORE=a86b5f93db43e4c4640ad1527e2a4695aad0f35b' in provenance
+    if os.environ.get('GITHUB_SHA'):
+        assert 'PORT_COMMIT='+os.environ['GITHUB_SHA']+'\n' in provenance
     shaders=0
     for source in Path('vita3k/shaders-builtin').rglob('*.spv'):
         name=base+'/shaders-builtin/'+source.relative_to('vita3k/shaders-builtin').as_posix()

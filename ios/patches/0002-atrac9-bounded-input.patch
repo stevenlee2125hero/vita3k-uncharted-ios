@@ -1,0 +1,147 @@
+--- a/C/src/bit_reader.c
++++ b/C/src/bit_reader.c
+@@ -7,10 +7,20 @@
+ {
+ 	br->Buffer = buffer;
+ 	br->Position = 0;
++	br->BitLimit = -1;
++	br->Overflow = 0;
++}
++
++static void CheckRead(BitReaderCxt* br, int bits)
++{
++	if (br->BitLimit >= 0 && (bits < 0 || bits > 32 || br->Position < 0
++		|| br->Position > br->BitLimit || bits > br->BitLimit - br->Position))
++		longjmp(*br->Overflow, 1);
+ }
+ 
+ int ReadInt(BitReaderCxt* br, const int bits)
+ {
++	CheckRead(br, bits);
+ 	const int value = PeekInt(br, bits);
+ 	br->Position += bits;
+ 	return value;
+@@ -18,6 +28,7 @@
+ 
+ int ReadSignedInt(BitReaderCxt* br, const int bits)
+ {
++	CheckRead(br, bits);
+ 	const int value = PeekInt(br, bits);
+ 	br->Position += bits;
+ 	return SignExtend32(value, bits);
+@@ -25,6 +36,7 @@
+ 
+ int ReadOffsetBinary(BitReaderCxt* br, const int bits)
+ {
++	CheckRead(br, bits);
+ 	const int offset = 1 << (bits - 1);
+ 	const int value = PeekInt(br, bits) - offset;
+ 	br->Position += bits;
+@@ -33,6 +45,21 @@
+ 
+ int PeekInt(BitReaderCxt* br, const int bits)
+ {
++	// Huffman decoding may peek past its final codeword. Zero-extend only
++	// the lookahead; ReadInt and final frame validation still reject consumption.
++	if (br->BitLimit >= 0) {
++		if (bits < 0 || bits > 32 || br->Position < 0 || br->Position > br->BitLimit
++			|| (bits > 0 && br->Position == br->BitLimit))
++			longjmp(*br->Overflow, 1);
++		unsigned int value = 0;
++		for (int bit = 0; bit < bits; ++bit) {
++			const long long position = (long long)br->Position + bit;
++			value <<= 1;
++			if (position < br->BitLimit)
++				value |= (br->Buffer[position / 8] >> (7 - position % 8)) & 1;
++		}
++		return (int)value;
++	}
+ 	const int byteIndex = br->Position / 8;
+ 	const int bitIndex = br->Position % 8;
+ 	const unsigned char* buffer = br->Buffer;
+--- a/C/src/bit_reader.h
++++ b/C/src/bit_reader.h
+@@ -1,8 +1,11 @@
+ #pragma once
++#include <setjmp.h>
+ 
+ typedef struct {
+ 	const unsigned char * Buffer;
+ 	int Position;
++	int BitLimit;
++	jmp_buf *Overflow;
+ } BitReaderCxt;
+ 
+ // Make MSVC compiler happy. Leave const in for value parameters
+--- a/C/src/decoder.c
++++ b/C/src/decoder.c
+@@ -7,6 +7,7 @@
+ #include "unpack.h"
+ #include "utility.h"
+ #include <string.h>
++#include <limits.h>
+ 
+ static At9Status DecodeFrame(Frame* frame, BitReaderCxt* br);
+ static void ImdctBlock(Block* block);
+@@ -25,9 +26,31 @@
+ 	return ERR_SUCCESS;
+ }
+ 
++At9Status DecodeBounded(Atrac9Handle* handle, const unsigned char* audio, int audioBytes, unsigned char* pcm, int* bytesUsed)
++{
++	if (bytesUsed) *bytesUsed = 0;
++	if (!handle || !audio || !pcm || !bytesUsed || audioBytes <= 0 || audioBytes > INT_MAX / 8)
++		return ERR_BAD_CONFIG_DATA;
++	jmp_buf overflow;
++	if (setjmp(overflow))
++		return ERR_UNPACK_EXTENSION_DATA_INVALID;
++	BitReaderCxt br;
++	InitBitReaderCxt(&br, audio);
++	br.BitLimit = audioBytes * 8;
++	br.Overflow = &overflow;
++	ERROR_CHECK(DecodeFrame(&handle->Frame, &br));
++	if (br.Position < 0 || br.Position > br.BitLimit)
++		return ERR_UNPACK_EXTENSION_DATA_INVALID;
++	PcmFloatToShort(&handle->Frame, (short*)pcm);
++	*bytesUsed = br.Position / 8;
++	return ERR_SUCCESS;
++}
++
+ static At9Status DecodeFrame(Frame* frame, BitReaderCxt* br)
+ {
+ 	ERROR_CHECK(UnpackFrame(frame, br));
++	if (br->BitLimit >= 0 && (br->Position < 0 || br->Position > br->BitLimit))
++		return ERR_UNPACK_EXTENSION_DATA_INVALID;
+ 
+ 	for (int i = 0; i < frame->Config->ChannelConfig.BlockCount; i++)
+ 	{
+--- a/C/src/decoder.h
++++ b/C/src/decoder.h
+@@ -5,3 +5,5 @@
+ 
+ At9Status Decode(Atrac9Handle* handle, const unsigned char* audio, unsigned char* pcm, int* bytesUsed);
+ int GetCodecInfo(Atrac9Handle* handle, CodecInfo* pCodecInfo);
++
++At9Status DecodeBounded(Atrac9Handle* handle, const unsigned char* audio, int audioBytes, unsigned char* pcm, int* bytesUsed);
+--- a/C/src/libatrac9.h
++++ b/C/src/libatrac9.h
+@@ -22,6 +22,8 @@
+ int Atrac9InitDecoder(void* handle, unsigned char *pConfigData);
+ int Atrac9Decode(void* handle, const unsigned char *pAtrac9Buffer, short *pPcmBuffer, int *pNBytesUsed);
+ 
++int Atrac9DecodeBounded(void* handle, const unsigned char *pAtrac9Buffer, int bytes, short *pPcmBuffer, int *pNBytesUsed);
++
+ int Atrac9GetCodecInfo(void* handle, Atrac9CodecInfo *pCodecInfo);
+ 
+ #ifdef __cplusplus
+--- a/C/src/libatrac9.c
++++ b/C/src/libatrac9.c
+@@ -29,3 +29,8 @@
+ {
+ 	return GetCodecInfo(handle, (CodecInfo*)pCodecInfo);
+ }
++
++int Atrac9DecodeBounded(void* handle, const unsigned char *buffer, int bytes, short *pcm, int *used)
++{
++	return DecodeBounded(handle, buffer, bytes, (unsigned char*)pcm, used);
++}

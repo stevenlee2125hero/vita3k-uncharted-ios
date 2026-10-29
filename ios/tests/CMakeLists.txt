@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.22)
-project(Vita3KiOSNativeSupportTests LANGUAGES CXX)
+project(Vita3KiOSNativeSupportTests LANGUAGES C CXX)
 enable_testing()
 add_executable(ime_text_tests IMETextTests.cpp)
 target_compile_features(ime_text_tests PRIVATE cxx_std_17)
@@ -36,3 +36,12 @@ add_test(NAME unmapped_readback_tests COMMAND unmapped_readback_tests)
 
 find_package(Python3 REQUIRED COMPONENTS Interpreter)
 add_test(NAME texture_formats COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/../../tools/test_texture_formats.py")
+
+# Use the patched production decoder, not a stub of the missing Plus API.
+file(GLOB ATRAC9_SOURCES "${CMAKE_CURRENT_SOURCE_DIR}/../../external/LibAtrac9/C/src/*.c")
+add_executable(atrac9_bounded_tests Atrac9BoundedTests.c ${ATRAC9_SOURCES})
+target_include_directories(atrac9_bounded_tests PRIVATE ../../external/LibAtrac9/C/src)
+target_compile_options(atrac9_bounded_tests PRIVATE -fsanitize=address,undefined -fno-omit-frame-pointer)
+target_link_options(atrac9_bounded_tests PRIVATE -fsanitize=address,undefined)
+target_link_libraries(atrac9_bounded_tests PRIVATE m)
+add_test(NAME atrac9_bounded_tests COMMAND atrac9_bounded_tests)

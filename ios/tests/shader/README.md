@@ -31,4 +31,6 @@ surface reinterpretation and depth alias packing, to iOS Metal. CI sends both
 builtin and synthetic Metal output to Apple's iPhoneOS Metal compiler.
 This does **not** execute shaders on an iPhone, validate Vulkan synchronization
 on a GPU, or establish game compatibility/FPS.
-The ordinary dependency-free suite remains `cmake -S ios/tests -B build-tests`.
+The native suite is `cmake -S ios/tests -B build-tests`. Initialize
+external/LibAtrac9 and apply ios/patches/0002-atrac9-bounded-input.patch first,
+as delivery CI does, for its bounded-input audio regression test.

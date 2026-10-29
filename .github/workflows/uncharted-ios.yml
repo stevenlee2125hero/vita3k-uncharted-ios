@@ -40,6 +40,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - run: |
+          git submodule update --init external/LibAtrac9
+          git -C external/LibAtrac9 apply "$PWD/ios/patches/0002-atrac9-bounded-input.patch"
+      - run: |
           cmake -S ios/tests -B build-native-tests -DCMAKE_CXX_FLAGS="-fsanitize=address,undefined -fno-omit-frame-pointer"
           cmake --build build-native-tests
           ctest --test-dir build-native-tests --output-on-failure
@@ -76,6 +79,9 @@ jobs:
 
       - name: Apply iOS submodule patches
         run: |
+          git -C external/LibAtrac9 apply \
+            "${GITHUB_WORKSPACE}/ios/patches/0002-atrac9-bounded-input.patch"
+          git -C external/LibAtrac9 diff --check
           # dynarmic/oaknut is a nested submodule; CI restores its pinned
           # commit, so iOS-specific fixes live as patches applied here.
           git -C external/dynarmic apply --verbose \
