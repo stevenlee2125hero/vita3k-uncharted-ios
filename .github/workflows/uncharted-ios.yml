@@ -175,10 +175,15 @@ jobs:
             --configuration Release \
             --output artifacts/Vita3K-Uncharted-iOS.ipa
 
+      - name: Verify independent package and bundled Plus shaders
+        run: python3 .ci/verify-ipa.py artifacts/Vita3K-Uncharted-iOS.ipa
+
       - name: Upload unsigned upstream-core IPA
         uses: actions/upload-artifact@v4
         with:
           name: Vita3K-Uncharted-iOS-${{ github.sha }}
-          path: artifacts/Vita3K-Uncharted-iOS.ipa
+          path: |
+            artifacts/Vita3K-Uncharted-iOS.ipa
+            artifacts/Vita3K-Uncharted-iOS.verification.json
           if-no-files-found: error
           retention-days: 14
