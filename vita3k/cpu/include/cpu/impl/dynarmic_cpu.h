@@ -53,9 +53,23 @@ class DynarmicCPU : public CPUInterface {
 
     std::unique_ptr<Dynarmic::A32::Jit> make_jit();
     void rebuild_jit();
+    bool time_sliced = false;
+
+    // Architectural state kept while `jit` is released (dormant thread or
+    // not-yet-started thread). Accessors read/write this instead of the jit
+    // so parked threads never force a code-cache allocation.
+    std::unique_ptr<CPUContext> parked_ctx;
+
+    void ensure_jit();
 
 public:
-    DynarmicCPU(CPUState *state, std::size_t processor_id, bool cpu_opt);
+    DynarmicCPU(CPUState *state, std::size_t processor_id, bool cpu_opt, bool time_sliced = false);
+    // Only rebind an idle, exclusively leased worker. Emitted callbacks/CP15
+    // addresses stay stable; their values follow the current guest thread.
+    void rebind(CPUState *state);
+    void clear_translation_cache();
+    std::array<uint32_t, 3> save_cp15() const;
+    void load_cp15(const std::array<uint32_t, 3> &values);
     ~DynarmicCPU() override;
     int run() override;
     void stop() override;
@@ -98,6 +112,8 @@ public:
     bool get_log_mem() override;
 
     void clear_exclusive() override;
+    void release_code_cache() override;
+    bool ensure_code_cache() override;
     std::size_t processor_id() const override;
     void invalidate_jit_cache(Address start, size_t length) override;
 

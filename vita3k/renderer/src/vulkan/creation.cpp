@@ -55,12 +55,14 @@ VKContext::VKContext(VKState &state, MemState &mem)
     vertex_info_uniform_buffer.alignment = uniform_alignment;
     fragment_info_uniform_buffer.alignment = uniform_alignment;
 
+    if (state.features.can_surface_sync())
+        state.start_gpu_request_wait_thread(mem);
+
     if (state.features.enable_memory_mapping) {
         // use the default buffer
         std::fill_n(vertex_stream_buffers, SCE_GXM_MAX_VERTEX_STREAMS, state.default_buffer.buffer);
 
-        // also initialize the gpu wait thread
-        state.start_gpu_request_wait_thread(mem);
+
     } else {
         // these are not needed when using memory mapping
         vertex_stream_ring_buffer.create();
@@ -152,7 +154,7 @@ VKContext::VKContext(VKState &state, MemState &mem)
 }
 
 VKContext::~VKContext() {
-    if (state.features.enable_memory_mapping && state.gpu_request_wait_thread.joinable() && !state.request_queue.is_aborted()) {
+    if (state.features.can_surface_sync() && state.gpu_request_wait_thread.joinable() && !state.request_queue.is_aborted()) {
         auto promise = std::make_shared<std::promise<void>>();
         std::future<void> future = promise->get_future();
         state.request_queue.push(CallbackRequest{ new CallbackRequestFunction([promise]() { promise->set_value(); }) });

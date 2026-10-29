@@ -84,3 +84,14 @@ fastlane/readme.md
 
 # Copilot local config
 .github/copilot-instructions.md
+
+# Local integration workspace; never ship game dumps or credentials
+.port-work/
+build-deps/
+build-ios*/
+*.ipa
+*.vpk
+*.VPK
+work.bin
+*.rif
+*.pup

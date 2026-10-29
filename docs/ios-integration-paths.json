@@ -1,0 +1,220 @@
+{
+  "plus": "a86b5f93db43e4c4640ad1527e2a4695aad0f35b",
+  "runtime": "432342d2ef4f86ce98fad2b4362678d84cd4e204",
+  "comparison": "610e6970ad943d281139bc9081fa82cfb2498068",
+  "paths": [
+    "CMakeLists.txt",
+    "external/CMakeLists.txt",
+    "external/miniz/miniz.c",
+    "vcpkg.json",
+    "vita3k/CMakeLists.txt",
+    "vita3k/app/CMakeLists.txt",
+    "vita3k/app/include/app/functions.h",
+    "vita3k/app/src/app_init.cpp",
+    "vita3k/app/src/guest_dump.cpp",
+    "vita3k/audio/CMakeLists.txt",
+    "vita3k/audio/include/audio/state.h",
+    "vita3k/audio/src/audio.cpp",
+    "vita3k/audio/src/impl/sdl_audio.cpp",
+    "vita3k/codec/include/codec/state.h",
+    "vita3k/codec/src/aac.cpp",
+    "vita3k/codec/src/h264.cpp",
+    "vita3k/config/include/config/config.h",
+    "vita3k/config/src/config.cpp",
+    "vita3k/cpu/CMakeLists.txt",
+    "vita3k/cpu/include/cpu/functions.h",
+    "vita3k/cpu/include/cpu/impl/dynarmic_cpu.h",
+    "vita3k/cpu/include/cpu/impl/interface.h",
+    "vita3k/cpu/include/cpu/impl/pooled_cpu.h",
+    "vita3k/cpu/include/cpu/slot_pool.h",
+    "vita3k/cpu/src/cpu.cpp",
+    "vita3k/cpu/src/dynarmic_cpu.cpp",
+    "vita3k/cpu/src/pooled_cpu.cpp",
+    "vita3k/ctrl/src/ctrl.cpp",
+    "vita3k/display/include/display/state.h",
+    "vita3k/display/src/display.cpp",
+    "vita3k/features/include/features/state.h",
+    "vita3k/gxm/include/gxm/functions.h",
+    "vita3k/gxm/include/gxm/state.h",
+    "vita3k/gxm/include/gxm/types.h",
+    "vita3k/ime/include/ime/state.h",
+    "vita3k/ime/include/ime/text.h",
+    "vita3k/io/src/io.cpp",
+    "vita3k/kernel/include/kernel/state.h",
+    "vita3k/kernel/include/kernel/thread/thread_state.h",
+    "vita3k/kernel/src/load_self.cpp",
+    "vita3k/kernel/src/thread.cpp",
+    "vita3k/mem/include/mem/allocation_budget.h",
+    "vita3k/mem/include/mem/functions.h",
+    "vita3k/mem/include/mem/guest_range.h",
+    "vita3k/mem/include/mem/state.h",
+    "vita3k/mem/src/mem.cpp",
+    "vita3k/modules/SceGxm/SceGxm.cpp",
+    "vita3k/modules/SceKernelThreadMgr/SceThreadmgr.cpp",
+    "vita3k/modules/SceNet/macos_net_helper.cpp",
+    "vita3k/modules/SceVideodec/SceVideodecUser.cpp",
+    "vita3k/packages/CMakeLists.txt",
+    "vita3k/packages/include/packages/archive.h",
+    "vita3k/packages/include/packages/pkg.h",
+    "vita3k/packages/include/packages/sfo.h",
+    "vita3k/packages/src/archive.cpp",
+    "vita3k/packages/src/pkg.cpp",
+    "vita3k/packages/src/sfo.cpp",
+    "vita3k/renderer/CMakeLists.txt",
+    "vita3k/renderer/include/renderer/frame_host.h",
+    "vita3k/renderer/include/renderer/state.h",
+    "vita3k/renderer/include/renderer/texture_cache.h",
+    "vita3k/renderer/include/renderer/vulkan/frame_lifetime.h",
+    "vita3k/renderer/include/renderer/vulkan/pipeline_cache_data.h",
+    "vita3k/renderer/include/renderer/vulkan/screen_renderer.h",
+    "vita3k/renderer/include/renderer/vulkan/state.h",
+    "vita3k/renderer/include/renderer/vulkan/surface_cache.h",
+    "vita3k/renderer/include/renderer/vulkan/types.h",
+    "vita3k/renderer/src/batch.cpp",
+    "vita3k/renderer/src/creation.cpp",
+    "vita3k/renderer/src/texture/cache.cpp",
+    "vita3k/renderer/src/vulkan/pipeline_cache.cpp",
+    "vita3k/renderer/src/vulkan/renderer.cpp",
+    "vita3k/renderer/src/vulkan/screen_filters.cpp",
+    "vita3k/renderer/src/vulkan/screen_renderer.cpp",
+    "vita3k/renderer/src/vulkan/surface_cache.cpp",
+    "vita3k/renderer/src/vulkan/texture.cpp",
+    "vita3k/util/include/util/warning.h",
+    "vita3k/util/src/logging.cpp",
+    "vita3k/vkutil/include/vkutil/vkutil.h"
+  ],
+  "unresolved": [
+    [
+      "CMakeLists.txt",
+      "merge conflict"
+    ],
+    [
+      "vita3k/CMakeLists.txt",
+      "merge conflict"
+    ],
+    [
+      "vita3k/audio/src/impl/sdl_audio.cpp",
+      "merge conflict"
+    ],
+    [
+      "vita3k/codec/include/codec/state.h",
+      "merge conflict"
+    ],
+    [
+      "vita3k/codec/src/aac.cpp",
+      "merge conflict"
+    ],
+    [
+      "vita3k/codec/src/h264.cpp",
+      "merge conflict"
+    ],
+    [
+      "vita3k/cpu/include/cpu/impl/dynarmic_cpu.h",
+      "merge conflict"
+    ],
+    [
+      "vita3k/cpu/src/cpu.cpp",
+      "merge conflict"
+    ],
+    [
+      "vita3k/cpu/src/dynarmic_cpu.cpp",
+      "merge conflict"
+    ],
+    [
+      "vita3k/ctrl/src/ctrl.cpp",
+      "merge conflict"
+    ],
+    [
+      "vita3k/display/src/display.cpp",
+      "merge conflict"
+    ],
+    [
+      "vita3k/ime/include/ime/state.h",
+      "merge conflict"
+    ],
+    [
+      "vita3k/kernel/include/kernel/state.h",
+      "merge conflict"
+    ],
+    [
+      "vita3k/kernel/src/load_self.cpp",
+      "merge conflict"
+    ],
+    [
+      "vita3k/mem/include/mem/state.h",
+      "merge conflict"
+    ],
+    [
+      "vita3k/mem/src/mem.cpp",
+      "merge conflict"
+    ],
+    [
+      "vita3k/modules/SceGxm/SceGxm.cpp",
+      "merge conflict"
+    ],
+    [
+      "vita3k/modules/SceVideodec/SceVideodecUser.cpp",
+      "merge conflict"
+    ],
+    [
+      "vita3k/packages/CMakeLists.txt",
+      "merge conflict"
+    ],
+    [
+      "vita3k/packages/include/packages/sfo.h",
+      "merge conflict"
+    ],
+    [
+      "vita3k/packages/src/pkg.cpp",
+      "merge conflict"
+    ],
+    [
+      "vita3k/packages/src/sfo.cpp",
+      "merge conflict"
+    ],
+    [
+      "vita3k/renderer/include/renderer/texture_cache.h",
+      "merge conflict"
+    ],
+    [
+      "vita3k/renderer/src/batch.cpp",
+      "merge conflict"
+    ],
+    [
+      "vita3k/renderer/src/creation.cpp",
+      "merge conflict"
+    ],
+    [
+      "vita3k/renderer/src/texture/cache.cpp",
+      "merge conflict"
+    ],
+    [
+      "vita3k/renderer/src/vulkan/pipeline_cache.cpp",
+      "merge conflict"
+    ],
+    [
+      "vita3k/renderer/src/vulkan/renderer.cpp",
+      "merge conflict"
+    ],
+    [
+      "vita3k/renderer/src/vulkan/screen_renderer.cpp",
+      "merge conflict"
+    ],
+    [
+      "vita3k/renderer/src/vulkan/surface_cache.cpp",
+      "merge conflict"
+    ],
+    [
+      "vita3k/renderer/src/vulkan/texture.cpp",
+      "merge conflict"
+    ],
+    [
+      "vita3k/util/src/logging.cpp",
+      "merge conflict"
+    ],
+    [
+      "vita3k/vkutil/include/vkutil/vkutil.h",
+      "merge conflict"
+    ]
+  ]
+}

@@ -37,6 +37,12 @@
 #include <spdlog/sinks/stdout_color_sinks.h>
 #endif
 
+#if defined(VITA3K_PLATFORM_IOS)
+#include <pthread.h>
+#include <sys/qos.h>
+#endif
+
+#include <chrono>
 #include <functional>
 #include <iostream>
 #include <mutex>
@@ -44,11 +50,14 @@
 
 namespace logging {
 
-static const fs::path &LOG_FILE_NAME = "vita3k.log";
+static const fs::path &LOG_FILE_NAME = "tsubomi.log";
 static const char *LOG_PATTERN = "%^[%H:%M:%S.%e] |%L| [%!]: %v%$";
 static constexpr size_t ASYNC_LOG_QUEUE_SIZE = 65536;
 static std::vector<spdlog::sink_ptr> sinks;
 static std::once_flag s_async_logging_once;
+#if defined(VITA3K_PLATFORM_IOS)
+static std::once_flag s_periodic_flush_once;
+#endif
 #ifdef __ANDROID__
 static std::shared_ptr<spdlog::sinks::android_sink_mt> s_logcat_sink;
 #endif
@@ -154,6 +163,15 @@ ExitCode init(const Root &root_paths, bool use_stdout) {
     // the app is usually killed rather than exited, so buffered lines go out every second; set_level picks the per-line policy
     spdlog::flush_every(std::chrono::seconds(1));
     apply_android_log_policy(spdlog::level::trace);
+#elif defined(VITA3K_PLATFORM_IOS)
+    // Flushing every trace line forces thousands of tiny file writes while a
+    // title boots, competing with emulation and making audio underrun. Keep
+    // warnings immediate, batch normal diagnostic output for at most one
+    // second, and rely on the iOS fatal-signal handler to flush on a crash.
+    spdlog::flush_on(spdlog::level::warn);
+    std::call_once(s_periodic_flush_once, []() {
+        spdlog::flush_every(std::chrono::seconds(1));
+    });
 #endif
 
     register_log_exception_handler();
@@ -209,7 +227,17 @@ ExitCode add_sink(const fs::path &log_path) {
 
 void rebuild_default_logger() {
     std::call_once(s_async_logging_once, []() {
+#if defined(VITA3K_PLATFORM_IOS)
+        // The logger thread formats messages and writes them to disk. Nothing
+        // waits on it, so on an Apple SoC it has no business competing with
+        // emulation for a performance core - utility QoS parks it on the
+        // efficiency cores instead, where the same work costs far less power.
+        spdlog::init_thread_pool(ASYNC_LOG_QUEUE_SIZE, 1, []() {
+            pthread_set_qos_class_self_np(QOS_CLASS_UTILITY, 0);
+        });
+#else
         spdlog::init_thread_pool(ASYNC_LOG_QUEUE_SIZE, 1);
+#endif
     });
 
     auto duplicate_filter = std::make_shared<spdlog::sinks::dup_filter_sink_mt>(std::chrono::seconds(2), spdlog::level::info);

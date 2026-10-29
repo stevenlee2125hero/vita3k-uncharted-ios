@@ -30,6 +30,7 @@ CPUStatePtr init_cpu(bool cpu_opt, SceUID thread_id, std::size_t processor_id, M
 int run(CPUState &state);
 int step(CPUState &state);
 void stop(CPUState &state);
+void stop_from_signal(CPUState &state);
 void set_thread_id(CPUState &state, SceUID thread_id);
 SceUID get_thread_id(CPUState &state);
 uint32_t read_reg(CPUState &state, size_t index);
@@ -49,6 +50,8 @@ CPUContext save_context(CPUState &state);
 void load_context(CPUState &state, const CPUContext &ctx);
 std::size_t get_processor_id(CPUState &state);
 void invalidate_jit_cache(CPUState &state, Address start, size_t length);
+void release_code_cache(CPUState &state);
+bool ensure_code_cache(CPUState &state);
 
 uint32_t read_fpscr(CPUState &state);
 void write_fpscr(CPUState &state, uint32_t value);
@@ -77,3 +80,15 @@ void get_last_import_call(uint32_t &nid, uint32_t &lr);
 void set_log_mem(CPUState &state, bool log);
 bool get_log_code(CPUState &state);
 bool get_log_mem(CPUState &state);
+
+#if defined(VITA3K_PLATFORM_IOS)
+// Configure once at process startup, before creating any JIT or universal pool.
+void set_ios_jit_cache_size(std::size_t bytes);
+std::size_t get_ios_jit_cache_size();
+#endif
+
+// arm64 only: the oaknut/StikDebug JIT region pool does not exist on the
+// x86_64 Simulator, where dynarmic's x64 backend allocates its own cache.
+#if defined(VITA3K_PLATFORM_IOS) && defined(__aarch64__)
+std::size_t prewarm_ios_jit_code_cache_pool(std::size_t target_count, std::size_t cache_size);
+#endif

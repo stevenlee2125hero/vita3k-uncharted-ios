@@ -94,17 +94,21 @@ set(BUNDLE_SPEEX TRUE CACHE BOOL "Bundle the speex library")
 set(LAZY_LOAD_LIBS TRUE CACHE BOOL "Lazily load shared libraries")
 set(USE_SANITIZERS FALSE CACHE BOOL "Dont't use sanitizers")
 
-add_subdirectory(cubeb EXCLUDE_FROM_ALL)
+if(NOT VITA3K_BUILD_IOS_UPSTREAM_CORE)
+	add_subdirectory(cubeb EXCLUDE_FROM_ALL)
+endif()
 
-if (ARCHITECTURE STREQUAL "arm64")
-	target_compile_definitions(speex PUBLIC
-		#_USE_NEON
-	)
-elseif (ARCHITECTURE STREQUAL "x86_64")
-	target_compile_definitions(speex PUBLIC
-		_USE_SSE
-		_USE_SSE2
-	)
+if (TARGET speex)
+	if (ARCHITECTURE STREQUAL "arm64")
+		target_compile_definitions(speex PUBLIC
+			#_USE_NEON
+		)
+	elseif (ARCHITECTURE STREQUAL "x86_64")
+		target_compile_definitions(speex PUBLIC
+			_USE_SSE
+			_USE_SSE2
+		)
+	endif ()
 endif ()
 
 if(ANDROID)
@@ -225,14 +229,35 @@ target_include_directories(CLI11 INTERFACE "${CMAKE_CURRENT_SOURCE_DIR}/cli11")
 
 add_library(vulkan INTERFACE)
 target_include_directories(vulkan INTERFACE "${CMAKE_CURRENT_SOURCE_DIR}/VulkanMemoryAllocator-Hpp/Vulkan-Headers/include")
-if(APPLE)
+if(VITA3K_BUILD_IOS_UPSTREAM_CORE)
+	set(VITA3K_IOS_MOLTENVK_LIBRARY "" CACHE FILEPATH "Path to the iOS arm64 MoltenVK static library")
+	set(VITA3K_IOS_MOLTENVK_INCLUDE_DIR "" CACHE PATH "Path to MoltenVK headers")
+	if(NOT EXISTS "${VITA3K_IOS_MOLTENVK_LIBRARY}")
+		message(FATAL_ERROR "VITA3K_IOS_MOLTENVK_LIBRARY must name an existing iOS MoltenVK static library.")
+	endif()
+	if(NOT EXISTS "${VITA3K_IOS_MOLTENVK_INCLUDE_DIR}/MoltenVK/mvk_vulkan.h")
+		message(FATAL_ERROR "VITA3K_IOS_MOLTENVK_INCLUDE_DIR must contain MoltenVK/mvk_vulkan.h.")
+	endif()
+	include("${CMAKE_CURRENT_LIST_DIR}/../ios/cmake/ValidateMoltenVK.cmake")
+	add_library(moltenvk-ios STATIC IMPORTED GLOBAL)
+	set_target_properties(moltenvk-ios PROPERTIES
+		IMPORTED_LOCATION "${VITA3K_IOS_MOLTENVK_LIBRARY}"
+		INTERFACE_INCLUDE_DIRECTORIES "${VITA3K_IOS_MOLTENVK_INCLUDE_DIR}")
+	target_include_directories(vulkan INTERFACE "${VITA3K_IOS_MOLTENVK_INCLUDE_DIR}")
+	target_link_libraries(vulkan INTERFACE
+		moltenvk-ios
+		"-framework Foundation"
+		"-framework IOSurface"
+		"-framework Metal"
+		"-framework QuartzCore")
+elseif(APPLE)
 	if(NOT EXISTS "${CMAKE_BINARY_DIR}/external/MoltenVK-macos.tar")
 		message(STATUS "Downloading MoltenVK...")
 		file(DOWNLOAD https://github.com/KhronosGroup/MoltenVK/releases/download/v1.2.11-artifacts/MoltenVK-macos.tar
 			"${CMAKE_BINARY_DIR}/external/MoltenVK-macos.tar" SHOW_PROGRESS)
 	endif()
 	if(NOT EXISTS "${CMAKE_BINARY_DIR}/external/MoltenVK")
-		execute_process(COMMAND tar xf "${CMAKE_BINARY_DIR}/external/MoltenVK-macos.tar" --strip-components=1 MoltenVK/MoltenVK 
+		execute_process(COMMAND tar xf "${CMAKE_BINARY_DIR}/external/MoltenVK-macos.tar" --strip-components=1 MoltenVK/MoltenVK
 			WORKING_DIRECTORY "${CMAKE_BINARY_DIR}/external")
 	endif()
 	target_include_directories(vulkan INTERFACE "${CMAKE_BINARY_DIR}/external/MoltenVK/include")
@@ -267,9 +292,22 @@ target_include_directories(vma INTERFACE
 if(ANDROID)
 	set(USE_STATIC_ANDROID_FFMPEG ON)
 endif()
-add_subdirectory(ffmpeg)
+if(VITA3K_BUILD_IOS_UPSTREAM_CORE)
+	# The ffmpeg-core submodule only ships desktop/Android prebuilts; its
+	# macOS static libraries cannot link into an iPhoneOS binary. Use the
+	# vcpkg-built iOS ffmpeg under the same target name instead.
+	find_package(FFMPEG REQUIRED)
+	add_library(ffmpeg INTERFACE)
+	target_include_directories(ffmpeg INTERFACE ${FFMPEG_INCLUDE_DIRS})
+	target_link_directories(ffmpeg INTERFACE ${FFMPEG_LIBRARY_DIRS})
+	target_link_libraries(ffmpeg INTERFACE ${FFMPEG_LIBRARIES})
+else()
+	add_subdirectory(ffmpeg)
+endif()
 
-if(APPLE OR NOT FORCE_BUILD_OPENSSL_MAC)
+# The Homebrew OpenSSL is a macOS library; hinting it while cross-compiling
+# for iPhoneOS would outrank the vcpkg iOS OpenSSL in FindOpenSSL.
+if((APPLE OR NOT FORCE_BUILD_OPENSSL_MAC) AND NOT VITA3K_BUILD_IOS_UPSTREAM_CORE)
 	execute_process(
 		COMMAND brew --prefix openssl
 		RESULT_VARIABLE BREW_RESULT
@@ -326,7 +364,7 @@ if(NOT OPENSSL_FOUND OR FORCE_BUILD_OPENSSL_MAC)
 				if(NOT EXISTS "${CMAKE_BINARY_DIR}/external/openssl/arm64")
 					file(MAKE_DIRECTORY "${CMAKE_BINARY_DIR}/external/openssl/arm64")
 					execute_process(COMMAND perl ../Configure darwin64-arm64 -mmacosx-version-min=11 WORKING_DIRECTORY "${CMAKE_BINARY_DIR}/external/openssl/arm64")
-					execute_process(COMMAND make -j${CPU_COUNT} WORKING_DIRECTORY "${CMAKE_BINARY_DIR}/external/openssl/arm64" OUTPUT_QUIET)	
+					execute_process(COMMAND make -j${CPU_COUNT} WORKING_DIRECTORY "${CMAKE_BINARY_DIR}/external/openssl/arm64" OUTPUT_QUIET)
 				endif()
 				if(NOT EXISTS "${CMAKE_BINARY_DIR}/external/openssl/x86_64")
 					file(MAKE_DIRECTORY "${CMAKE_BINARY_DIR}/external/openssl/x86_64")
@@ -402,8 +440,9 @@ if(XXH_X86DISPATCH_ALLOW_AVX)
 	target_compile_definitions(xxhash PRIVATE XXH_X86DISPATCH_ALLOW_AVX)
 endif()
 
-# Tracy
-if(NOT (CMAKE_BUILD_TYPE STREQUAL "Release"))
+# Tracy is opt-in, including with multi-config generators such as Xcode.
+option(VITA3K_ENABLE_TRACY "Enable Tracy profiler integration" OFF)
+if(VITA3K_ENABLE_TRACY)
 	option(TRACY_ENABLE_ON_CORE_COMPONENTS
 		"Enable and require Tracy to compile core components such as the renderer, shader recompiler and
 			HLE modules"
@@ -442,6 +481,10 @@ if(NOT (CMAKE_BUILD_TYPE STREQUAL "Release"))
 	# CMake project generators. More info here:
 	# https://cmake.org/cmake/help/latest/manual/cmake-buildsystem.7.html#build-configurations
 	target_compile_definitions(tracy PUBLIC $<$<CONFIG:Debug,RelWithDebInfo>:TRACY_ENABLE>)
+else()
+	# Override stale cache entries from previously profiling-enabled builds.
+	# Core targets must not link a tracy target that was not created.
+	set(TRACY_ENABLE_ON_CORE_COMPONENTS OFF PARENT_SCOPE)
 endif()
 
 #
@@ -455,7 +498,7 @@ endif()
 # Use XDG desktop portals on Linux
 set(NFD_PORTAL ON)
 
-if(NOT ANDROID)
+if(NOT ANDROID AND NOT VITA3K_BUILD_IOS_UPSTREAM_CORE)
 	# nativefiledialog-extended
 	add_subdirectory(nativefiledialog-extended)
 

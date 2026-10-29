@@ -109,6 +109,8 @@ public:
 
 private:
     void create_render_pass();
+    // Picks the swapchain present mode from the current v-sync preference.
+    void select_present_mode();
     void create_layout_sync();
     void create_swapchain();
     bool note_size_mismatch(bool mismatched);

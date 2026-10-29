@@ -106,9 +106,6 @@ static void process_batch(renderer::State &state, const FeatureState &features, 
         { CommandOpcode::DestroyContext, cmd_handle_destroy_context }
     };
 
-    if (command_list.context)
-        state.context = command_list.context;
-
     Command *cmd = command_list.first;
     uint32_t executed_in_list = 0;
 
@@ -220,6 +217,7 @@ void process_batches(renderer::State &state, const FeatureState &features, MemSt
 
         state.command_buffer_queue.pop();
         process_batch(state, features, mem, config, *cmd_list);
+        state.batches_processed.fetch_add(1, std::memory_order_relaxed);
     }
 }
 
@@ -320,6 +318,7 @@ static void render_loop(renderer::State &state, DisplayState &display, GxmState 
 
             state.render_frame(display, gxm, mem);
             state.swap_window();
+            state.host_frames_presented.fetch_add(1, std::memory_order_relaxed);
             state.async_flip_requested.store(false, std::memory_order_relaxed);
 
 #ifdef TRACY_ENABLE

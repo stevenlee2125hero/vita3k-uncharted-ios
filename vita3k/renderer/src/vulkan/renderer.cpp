@@ -52,6 +52,12 @@
 #include <MoltenVK/mvk_vulkan.h>
 #endif
 
+#if defined(VITA3K_PLATFORM_IOS)
+// MoltenVK is linked statically on iOS; there is no loader library for the
+// dynamic dispatcher to dlopen, so resolve everything from this entry point.
+extern "C" VKAPI_ATTR PFN_vkVoidFunction VKAPI_CALL vkGetInstanceProcAddr(VkInstance instance, const char *pName);
+#endif
+
 #ifdef __ANDROID__
 #include <SDL3/SDL_system.h>
 #include <dlfcn.h>
@@ -427,6 +433,9 @@ bool VKState::create(std::unique_ptr<renderer::State> &state, const Config &conf
 
         if (!detect_patch_bcn(&texture_cache.support_dxt))
             return false;
+#elif defined(VITA3K_PLATFORM_IOS)
+        VULKAN_HPP_DEFAULT_DISPATCHER.init(
+            reinterpret_cast<PFN_vkGetInstanceProcAddr>(&vkGetInstanceProcAddr));
 #else
         VULKAN_HPP_DEFAULT_DISPATCHER.init();
 #endif
@@ -526,15 +535,21 @@ bool VKState::create(std::unique_ptr<renderer::State> &state, const Config &conf
         }
 
 #ifdef __APPLE__
+#if !defined(VITA3K_PLATFORM_IOS)
+        // The older desktop MoltenVK package still needs this option. iOS
+        // 1.4.2 handles swizzling internally; this setting is obsolete/ignored.
         const VkBool32 full_image_swizzle = VK_TRUE;
+#endif
         const VkBool32 resume_lost_device = VK_TRUE;
 #ifndef NDEBUG
         const VkBool32 debug = VK_TRUE;
         const int32_t log_level = 4;
 #endif
         vk::LayerSettingEXT layer_settings[] = {
+#if !defined(VITA3K_PLATFORM_IOS)
             { kMVKMoltenVKDriverLayerName, "MVK_CONFIG_FULL_IMAGE_VIEW_SWIZZLE", vk::LayerSettingTypeEXT::eBool32, 1,
                 &full_image_swizzle },
+#endif
             { kMVKMoltenVKDriverLayerName, "MVK_CONFIG_RESUME_LOST_DEVICE", vk::LayerSettingTypeEXT::eBool32, 1,
                 &resume_lost_device },
 #ifndef NDEBUG
@@ -801,7 +816,7 @@ bool VKState::create(std::unique_ptr<renderer::State> &state, const Config &conf
         }
         support_memory_mapping &= support_standard_layout;
 
-#ifdef __APPLE__
+#if defined(__APPLE__) && !defined(VITA3K_PLATFORM_IOS)
         // we need to make a copy of the vertex buffer for moltenvk, so disable memory mapping
         support_memory_mapping = false;
 #endif
@@ -830,8 +845,10 @@ bool VKState::create(std::unique_ptr<renderer::State> &state, const Config &conf
             // No additional check needed for these methods
             mapping_method = MappingMethod::DoubleBuffer;
             supported_mapping_methods_mask |= (1 << static_cast<int>(MappingMethod::DoubleBuffer));
+#ifndef VITA3K_PLATFORM_IOS
             if (has_cached_host_memory)
                 supported_mapping_methods_mask |= (1 << static_cast<int>(MappingMethod::PageTable));
+#endif
 
             if (support_external_memory) {
                 // disable this extension on GPUs with an alignment requirement higher than 4096 (should only
@@ -840,8 +857,10 @@ bool VKState::create(std::unique_ptr<renderer::State> &state, const Config &conf
                 support_external_memory = (props.get<vk::PhysicalDeviceExternalMemoryHostPropertiesEXT>().minImportedHostPointerAlignment <= 4096);
             }
 
+#if !defined(VITA3K_PLATFORM_IOS)
             if (support_external_memory)
                 supported_mapping_methods_mask |= (1 << static_cast<int>(MappingMethod::ExernalHost));
+#endif
 
 #ifdef __ANDROID__
             if ((support_android_buffer_import || support_unix_fd_import) && has_cached_host_memory)
@@ -1128,6 +1147,8 @@ void VKState::late_init(const Config &cfg, const std::string_view game_id, MemSt
     if (support_standard_layout && !use_high_accuracy) {
         LOG_INFO("The Vulkan renderer is using texture viewport for better performance");
         features.use_texture_viewport = true;
+    } else if (use_high_accuracy) {
+        LOG_INFO("High accuracy enabled: texture viewport disabled");
     }
 
     // parse the mapping method
@@ -1158,6 +1179,24 @@ void VKState::late_init(const Config &cfg, const std::string_view game_id, MemSt
     features.enable_memory_mapping = mapping_method != MappingMethod::Disabled;
 
     features.force_full_precision = cfg.force_full_precision;
+#ifdef VITA3K_PLATFORM_IOS
+    if (game_id == "PCSD00001") {
+        features.force_full_precision = true;
+        res_multiplier = 1.0f;
+        LOG_INFO("UnchartedPSV: full Plus core a86b5f93; native 1x; full-precision shader arithmetic; cache 1001");
+    }
+#endif
+#if defined(VITA3K_PLATFORM_IOS)
+    // Memory mapping is unavailable under MoltenVK, but games like Gravity
+    // Rush CPU-read rendered surfaces (adaptive exposure): without any sync
+    // the guest reads stale RAM and blows the scene out white. Read surfaces
+    // back through a host-visible staging buffer instead.
+    if (!features.enable_memory_mapping) {
+        features.support_unmapped_surface_sync = true;
+        LOG_INFO("iOS: surface sync uses staging-buffer readback (no memory mapping); disable-surface-sync={}",
+            cfg.current_config.disable_surface_sync);
+    }
+#endif
 
 #ifdef __ANDROID__
     if (mapping_method == MappingMethod::NativeBuffer) {
@@ -1176,6 +1215,27 @@ void VKState::late_init(const Config &cfg, const std::string_view game_id, MemSt
 #if defined(__linux__) && !defined(__ANDROID__) // According to my tests (Macdu), mprotect on buffers (mapped with external memory host) only works with Nvidia drivers
     surface_cache.can_mprotect_mapped_memory = mapping_method == MappingMethod::DoubleBuffer
         || std::string_view(physical_device_properties.deviceName).contains("NVIDIA");
+#endif
+#if defined(VITA3K_PLATFORM_IOS)
+    // Sideloaded JIT keeps a debugger (StikDebug) attached, so every guest
+    // access-violation trap becomes a debug-link round trip before the
+    // in-process handler runs. Surface protection faults arrive in bursts when
+    // a title starts writing new content near cached surfaces (iOS also uses
+    // 16 KiB pages, so protected ranges swallow unrelated neighbours), which
+    // stalls guest threads for seconds or kills the process when a forwarded
+    // signal is mishandled. Spurious dirty marks from those merged pages also
+    // made titles re-sample render targets from never-synced guest RAM.
+    // Disable fault-based surface tracking; with memory mapping unavailable
+    // here, surface sync is inert, so this only removes the traps.
+    surface_cache.can_mprotect_mapped_memory = false;
+    LOG_INFO("iOS: fault-based surface dirty tracking disabled (traps are debugger-delivered)");
+    // Same debugger-trap issue applies to BufferTrapping's mprotect calls
+    // (vertex/uniform/index data for the newly-enabled DoubleBuffer mapping
+    // method - see can_mprotect_buffer_trapping in state.h). Force the
+    // always-recopy fallback instead of trusting a dirty flag a missed fault
+    // would never set.
+    can_mprotect_buffer_trapping = false;
+    LOG_INFO("iOS: fault-based buffer trapping disabled (traps are debugger-delivered); always re-syncing double-buffered data");
 #endif
 
     pipeline_cache.init(support_rasterized_order_access);
@@ -1417,7 +1477,10 @@ void VKState::render_frame(DisplayState &display, const GxmState &gxm, MemState 
             const bool pixel_perfect = fullscreen_hd_res_pixel_perfect && fullscreen
                 && !(screen_renderer.extent.width % DEFAULT_RES_WIDTH)
                 && !(screen_renderer.extent.height % (DEFAULT_RES_HEIGHT - 4));
-            if (stretch_the_display_area && !pixel_perfect) {
+            const auto *frame_host = this->renderer::State::frame;
+            if (frame_host && frame_host->custom_screen_viewport(static_cast<int>(fb_w), static_cast<int>(fb_h), display.viewport_x, display.viewport_y, display.viewport_w, display.viewport_h)) {
+                // The frontend supplied a safe-area-aware viewport.
+            } else if (stretch_the_display_area && !pixel_perfect) {
                 display.viewport_x = 0.0f;
                 display.viewport_y = 0.0f;
                 display.viewport_w = fb_w;
@@ -2330,6 +2393,8 @@ renderer::VulkanDeviceInfo renderer::enumerate_vulkan_devices(const std::string 
             return info;
 
         dispatch.init(vk_get_instance_proc_addr);
+#elif defined(VITA3K_PLATFORM_IOS)
+        dispatch.init(reinterpret_cast<PFN_vkGetInstanceProcAddr>(&vkGetInstanceProcAddr));
 #else
         dispatch.init();
 #endif
@@ -2443,6 +2508,29 @@ BufferTrapping::BufferTrapping(VKState &state)
 
 TrappedBuffer *BufferTrapping::access_buffer(Address addr, uint32_t size, MemState &mem, bool always_trap, bool cover_everything) {
     const bool is_buffer_small = (size < 3 * KiB(4));
+    // `always_trap` is passed by callers for buffers that "on the PS Vita,
+    // shader stores are used most of the time to write to" (see
+    // bind_vertex_streams): the GPU writes fresh data directly into the
+    // mapped mirror buffer, and the CPU-authored guest RAM copy is only the
+    // initial upload. Unconditionally re-copying guest RAM over the mirror
+    // on every access (the iOS no-mprotect fallback below) would clobber
+    // that GPU-written data with the stale original every single frame -
+    // this is what made Persona 4's character models render as garbled
+    // shards after DoubleBuffer mapping was enabled on iOS. So for these
+    // buffers specifically, do not re-copy: treat the mirror as GPU-owned
+    // after its initial upload.
+    //
+    // Where faults DO work, the dirty flag distinguishes "the GPU wrote this"
+    // from "the CPU legitimately re-authored this", and add_protect below
+    // installs the fault that sets it. Where they do not (iOS: a debugger
+    // stays attached for sideloaded JIT and intercepts the access-violation
+    // trap - a device log confirms access_violation_traps=0 for a whole
+    // session), the flag can never be set, so this degrades to permanent
+    // GPU ownership. That is the correct approximation of the two available
+    // behaviours, but the mprotect call itself must then be skipped: marking
+    // guest pages read-only when nothing will ever service the resulting
+    // fault only risks losing the guest's write.
+    const bool trust_dirty_tracking = state.can_mprotect_buffer_trapping || always_trap;
 
     if (is_buffer_small && always_trap) {
         // overwise we may end up with trapping nothing
@@ -2469,7 +2557,12 @@ TrappedBuffer *BufferTrapping::access_buffer(Address addr, uint32_t size, MemSta
     if (it != trapped_buffers.end()) {
         // must check if everything match
         TrappedBuffer &buffer = it->second;
-        if (!buffer.dirty && buffer.size >= size)
+        // Without working mprotect faults and without a shader-store buffer's
+        // stronger guarantee (see trust_dirty_tracking above), `dirty` would
+        // never be set by a write we can't detect, so trusting "not dirty"
+        // here would mean never re-syncing this buffer again after its first
+        // upload. Always fall through to the re-copy below in that case.
+        if (trust_dirty_tracking && !buffer.dirty && buffer.size >= size)
             // nothing to change
             return &it->second;
     } else {
@@ -2504,19 +2597,23 @@ TrappedBuffer *BufferTrapping::access_buffer(Address addr, uint32_t size, MemSta
         it->second.mapped_location += addr - mem_it->first;
     }
 
-    Address aligned_addr;
-    uint32_t aligned_size;
-    if (cover_everything) {
-        aligned_addr = align_down(addr, KiB(4));
-        aligned_size = align(addr + size, KiB(4)) - aligned_addr;
-    } else {
-        aligned_addr = align(addr, KiB(4));
-        aligned_size = align_down(addr + size - aligned_addr, KiB(4));
+    // Only where the fault can actually be delivered - see trust_dirty_tracking
+    // above for why a shader-store buffer does not opt into this on iOS.
+    if (state.can_mprotect_buffer_trapping) {
+        Address aligned_addr;
+        uint32_t aligned_size;
+        if (cover_everything) {
+            aligned_addr = align_down(addr, KiB(4));
+            aligned_size = align(addr + size, KiB(4)) - aligned_addr;
+        } else {
+            aligned_addr = align(addr, KiB(4));
+            aligned_size = align_down(addr + size - aligned_addr, KiB(4));
+        }
+        add_protect(mem, aligned_addr, aligned_size, MemPerm::ReadOnly, [it](Address addr, bool write) {
+            it->second.dirty = true;
+            return true;
+        });
     }
-    add_protect(mem, aligned_addr, aligned_size, MemPerm::ReadOnly, [it](Address addr, bool write) {
-        it->second.dirty = true;
-        return true;
-    });
 
     // copy back the data as it was non-existent or dirty
     memcpy(it->second.mapped_location, Ptr<void>(addr).get(mem), size);

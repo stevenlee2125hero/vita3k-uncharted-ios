@@ -16,6 +16,8 @@
 // 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
 
 #include <renderer/vulkan/surface_cache.h>
+#include <renderer/vulkan/unmapped_readback.h>
+#include <mem/guest_range.h>
 
 #include <gxm/functions.h>
 #include <renderer/vulkan/gxm_to_vulkan.h>
@@ -932,7 +934,12 @@ SurfaceRetrieveResult VKSurfaceCache::retrieve_color_surface_for_framebuffer(Mem
     info_added.reinterpret_view_is_raw = false;
 
     // linear surfaces and small tiled ones sync
-    if (!can_mprotect_mapped_memory) {
+#ifdef VITA3K_PLATFORM_IOS
+    const bool use_fault_tracking = false;
+#else
+    const bool use_fault_tracking = can_mprotect_mapped_memory;
+#endif
+    if (!use_fault_tracking) {
         // perform surface sync on everything
         // it is slow but well... we can't mprotect the buffer
         *info_added.need_surface_sync = color->surfaceType == SCE_GXM_COLOR_SURFACE_LINEAR || is_small_writeback_surface(tiling, original_width, original_height);
@@ -2570,7 +2577,7 @@ bool VKSurfaceCache::has_newer_overlapping_surface(const ColorSurfaceCacheInfo &
 }
 
 bool VKSurfaceCache::check_for_surface(MemState &mem, Address source_address, CallbackRequestFunction &callback, Address target_address, uint32_t source_size) {
-    if (!state.features.enable_memory_mapping || state.disable_surface_sync)
+    if (!state.features.can_surface_sync() || state.disable_surface_sync)
         return false;
 
     if (target_address)
@@ -2792,7 +2799,7 @@ Address VKSurfaceCache::color_surface_limit(const Address address) const {
 }
 
 int VKSurfaceCache::sync_surfaces_for_cpu_read(MemState &mem, Address address, uint32_t size) {
-    if (!state.features.enable_memory_mapping || state.disable_surface_sync || !state.context)
+    if (!state.features.can_surface_sync() || state.disable_surface_sync || !state.context)
         return 0;
 
     const VKContext &context = *static_cast<VKContext *>(state.context);
@@ -2822,7 +2829,7 @@ ColorSurfaceCacheInfo *VKSurfaceCache::perform_surface_sync() {
     } forget_written_surface{ last_written_surface };
 
     // surface sync is supported only if memory mapping is enabled
-    if (!state.features.enable_memory_mapping)
+    if (!state.features.can_surface_sync())
         return nullptr;
 
     if (last_written_surface && last_written_surface->dirty && *last_written_surface->dirty
@@ -2857,7 +2864,7 @@ ColorSurfaceCacheInfo *VKSurfaceCache::perform_surface_sync() {
 
     {
         vk::ImageMemoryBarrier sync_src_barrier{
-            .srcAccessMask = vk::AccessFlagBits::eColorAttachmentWrite | vk::AccessFlagBits::eShaderWrite,
+            .srcAccessMask = vk::AccessFlagBits::eColorAttachmentWrite | vk::AccessFlagBits::eShaderWrite | vk::AccessFlagBits::eTransferWrite,
             .dstAccessMask = vk::AccessFlagBits::eTransferRead,
             .oldLayout = vk::ImageLayout::eGeneral,
             .newLayout = vk::ImageLayout::eGeneral,
@@ -2866,7 +2873,7 @@ ColorSurfaceCacheInfo *VKSurfaceCache::perform_surface_sync() {
             .image = image_to_copy,
             .subresourceRange = vkutil::color_subresource_range
         };
-        cmd_buffer.pipelineBarrier(vk::PipelineStageFlagBits::eColorAttachmentOutput | vk::PipelineStageFlagBits::eFragmentShader, vk::PipelineStageFlagBits::eTransfer, {}, {}, {}, sync_src_barrier);
+        cmd_buffer.pipelineBarrier(vk::PipelineStageFlagBits::eColorAttachmentOutput | vk::PipelineStageFlagBits::eFragmentShader | vk::PipelineStageFlagBits::eComputeShader | vk::PipelineStageFlagBits::eTransfer, vk::PipelineStageFlagBits::eTransfer, {}, {}, {}, sync_src_barrier);
     }
 
     // this works for surface swizzles
@@ -3063,14 +3070,14 @@ ColorSurfaceCacheInfo *VKSurfaceCache::perform_surface_sync() {
     vk::Buffer buffer;
     uint32_t offset;
 
-    if (needs_copy_buffer) {
+    if (needs_copy_buffer || !state.features.enable_memory_mapping) {
         if (!last_written_surface->copy_buffer)
             last_written_surface->copy_buffer = std::make_unique<vkutil::Buffer>();
 
         vkutil::Buffer &copy_buffer = *last_written_surface->copy_buffer;
 
         if (!copy_buffer.buffer) {
-            copy_buffer.size = static_cast<vk::DeviceSize>(pixel_stride) * last_written_surface->original_height * vk::blockSize(last_written_surface->texture.format);
+            copy_buffer.size = readback_footprint(last_written_surface->original_width, last_written_surface->original_height, pixel_stride, static_cast<uint32_t>(vk::blockSize(sync_format)), tiled_layout);
             // the CPU repack reads this whole buffer back so it must be host-cached. Reading write-combined memory costs ~60ms for a 4MB surface.
             copy_buffer.init_buffer(vk::BufferUsageFlagBits::eTransferDst, vkutil::vma_readback_alloc);
         }
@@ -3150,6 +3157,19 @@ ColorSurfaceCacheInfo *VKSurfaceCache::perform_surface_sync() {
             cmd_buffer.copyImageToBuffer(image_to_copy, image_layout, buffer, tile_copies);
     } else {
         cmd_buffer.copyImageToBuffer(image_to_copy, image_layout, buffer, copy);
+    }
+
+    if (needs_copy_buffer || !state.features.enable_memory_mapping) {
+        const vk::BufferMemoryBarrier host_visibility{
+            .srcAccessMask = vk::AccessFlagBits::eTransferWrite,
+            .dstAccessMask = vk::AccessFlagBits::eHostRead,
+            .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+            .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+            .buffer = buffer,
+            .offset = 0,
+            .size = VK_WHOLE_SIZE
+        };
+        cmd_buffer.pipelineBarrier(vk::PipelineStageFlagBits::eTransfer, vk::PipelineStageFlagBits::eHost, {}, {}, host_visibility, {});
     }
 
     if (!last_written_surface->gpu_read_sync_only)
@@ -3239,6 +3259,17 @@ void VKSurfaceCache::perform_post_surface_sync(const MemState &mem, const PostSu
         return;
 
     const std::lock_guard<std::mutex> lock(post_sync_mutex);
+#ifdef VITA3K_PLATFORM_IOS
+    const std::lock_guard allocation_lock(mem.generation_mutex);
+    const uint32_t guest_stride = (surface->stride_bytes * 8) / gxm::bits_per_pixel(surface->format);
+    const uint64_t guest_bytes = readback_footprint(surface->original_width, surface->original_height, guest_stride,
+        gxm::bits_per_pixel(surface->format) / 8, surface->tiling == SurfaceTiling::Tiled);
+    if (!mem::valid_guest_range(surface->data.address(), guest_bytes,
+            [&](uint32_t page) { return is_valid_addr(mem, page); })) {
+        LOG_ERROR("Uncharted iOS post-sync target was freed: 0x{:X} bytes={}", surface->data.address(), guest_bytes);
+        return;
+    }
+#endif
     if (surface->generation != request.generation) {
         static std::atomic<uint32_t> dropped{ 0 };
         const uint32_t count = dropped.fetch_add(1, std::memory_order_relaxed) + 1;
@@ -3248,9 +3279,12 @@ void VKSurfaceCache::perform_post_surface_sync(const MemState &mem, const PostSu
     }
 
     const bool reads_copy_buffer = surface_sync_needs_u4u4u4u4_repack(*surface) || surface_sync_needs_f10_repack(*surface)
-        || surface_sync_needs_se5_repack(*surface) || format_need_additional_memory(surface->format);
+        || surface_sync_needs_se5_repack(*surface) || format_need_additional_memory(surface->format) || !state.features.enable_memory_mapping;
     if (reads_copy_buffer && (!surface->copy_buffer || !surface->copy_buffer->mapped_data))
         return;
+
+    if (reads_copy_buffer)
+        vkutil::allocator.invalidateAllocation(surface->copy_buffer->allocation, 0, VK_WHOLE_SIZE);
 
     const uint32_t pixel_stride = (surface->stride_bytes * 8) / gxm::bits_per_pixel(surface->format);
     uint8_t *pixels = surface->data.cast<uint8_t>().get(mem);
@@ -3292,6 +3326,20 @@ void VKSurfaceCache::perform_post_surface_sync(const MemState &mem, const PostSu
     const uint32_t y0 = std::min<uint32_t>(static_cast<uint32_t>(request.y0), surface->original_height);
     const uint32_t width = std::min<uint32_t>(request.width, pixel_stride - x0);
     const uint32_t height = std::min<uint32_t>(request.height, surface->original_height - y0);
+    if (!state.features.enable_memory_mapping) {
+        const auto bytes = static_cast<uint32_t>(gxm::bits_per_pixel(surface->format) / 8);
+        const bool tiled = surface->tiling == SurfaceTiling::Tiled;
+        const auto footprint = readback_footprint(surface->original_width, surface->original_height, pixel_stride, bytes, tiled);
+        if (!mem::valid_guest_range(surface->data.address(), footprint,
+                [&](uint32_t page) { return is_valid_addr(mem, page); })
+            || !copy_unmapped_readback(pixels, footprint, static_cast<const uint8_t *>(surface->copy_buffer->mapped_data), surface->copy_buffer->size,
+                surface->original_width, surface->original_height, pixel_stride, bytes, tiled, x0, y0, width, height)) {
+            LOG_ERROR("Uncharted iOS readback rejected: address=0x{:X} bytes={} dimensions={}x{} stride={}", surface->data.address(), footprint, surface->original_width, surface->original_height, pixel_stride);
+            return;
+        }
+        if (tiled || surface->swizzle.r == vk::ComponentSwizzle::eR || !format_support_swizzle(surface->format))
+            return;
+    }
     switch (vk::componentBits(surface->texture.format, 0)) {
     case 8:
         swizzle_rect_T<uint8_t>(pixels, pixel_stride, x0, y0, width, height, surface);

@@ -132,8 +132,20 @@ struct State {
 
     bool should_display;
 
+    // Diagnostic counter: number of frames the host render loop has presented.
+    std::atomic<uint64_t> host_frames_presented{ 0 };
+
+    // Diagnostic counter: number of GXM command batches executed by the
+    // render loop. If this stops advancing while guest threads keep queueing
+    // scenes, the renderer itself (or its sync-object gating) is the stall.
+    std::atomic<uint64_t> batches_processed{ 0 };
+
     std::atomic<bool> async_flip_requested{ false };
     std::atomic<int> pending_vsync{ -1 };
+    // Current v-sync preference. pending_vsync above is a one-shot the OpenGL
+    // backend consumes; this is the durable state, which Vulkan reads when it
+    // picks a swapchain present mode.
+    std::atomic<bool> vsync_enabled{ true };
 
     std::unique_ptr<std::thread> render_thread;
     std::atomic<bool> render_abort{ false };
@@ -189,6 +201,9 @@ struct State {
 
     virtual void render_frame(DisplayState &display, const GxmState &gxm, MemState &mem) = 0;
     virtual void swap_window() = 0;
+    // Ask the backend to rebuild its swapchain at the current drawable size
+    // (used by frontends whose window can resize/rotate, e.g. iOS).
+    virtual void request_screen_rebuild() {}
     virtual bool set_current() { return true; }
     virtual void done_current() {}
     // perform a screenshot of the (upscaled) frame to be rendered and return it in a vector in its rgba8 format
@@ -207,7 +222,8 @@ struct State {
     void set_surface_sync_state(bool disable) {
         disable_surface_sync = disable;
     }
-    void set_vsync_state(bool enable) {
+    virtual void set_vsync_state(bool enable) {
+        vsync_enabled.store(enable, std::memory_order_relaxed);
         pending_vsync.store(enable ? 1 : 0, std::memory_order_relaxed);
     }
     void set_stretch_display(bool enable) {

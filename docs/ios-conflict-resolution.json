@@ -1,0 +1,255 @@
+{
+  "restored_complete_plus_files": [
+    "vita3k/renderer/src/vulkan/surface_cache.cpp",
+    "vita3k/packages/src/sfo.cpp",
+    "vita3k/packages/include/packages/sfo.h",
+    "vita3k/packages/src/pkg.cpp",
+    "vita3k/modules/SceGxm/SceGxm.cpp",
+    "vita3k/modules/SceVideodec/SceVideodecUser.cpp",
+    "vita3k/kernel/src/load_self.cpp",
+    "vita3k/codec/src/h264.cpp",
+    "vita3k/codec/include/codec/state.h"
+  ],
+  "resolved_hunks": [
+    {
+      "path": "CMakeLists.txt",
+      "hunk": 0,
+      "strategy": "retained Plus unless explicit iOS integration recorded in resolver"
+    },
+    {
+      "path": "vita3k/CMakeLists.txt",
+      "hunk": 1,
+      "strategy": "retained Plus unless explicit iOS integration recorded in resolver"
+    },
+    {
+      "path": "vita3k/CMakeLists.txt",
+      "hunk": 0,
+      "strategy": "retained Plus unless explicit iOS integration recorded in resolver"
+    },
+    {
+      "path": "vita3k/packages/CMakeLists.txt",
+      "hunk": 0,
+      "strategy": "retained Plus unless explicit iOS integration recorded in resolver"
+    },
+    {
+      "path": "vita3k/vkutil/include/vkutil/vkutil.h",
+      "hunk": 0,
+      "strategy": "retained Plus unless explicit iOS integration recorded in resolver"
+    },
+    {
+      "path": "vita3k/util/src/logging.cpp",
+      "hunk": 2,
+      "strategy": "retained Plus unless explicit iOS integration recorded in resolver"
+    },
+    {
+      "path": "vita3k/util/src/logging.cpp",
+      "hunk": 1,
+      "strategy": "retained Plus unless explicit iOS integration recorded in resolver"
+    },
+    {
+      "path": "vita3k/util/src/logging.cpp",
+      "hunk": 0,
+      "strategy": "retained Plus unless explicit iOS integration recorded in resolver"
+    },
+    {
+      "path": "vita3k/renderer/src/batch.cpp",
+      "hunk": 0,
+      "strategy": "retained Plus unless explicit iOS integration recorded in resolver"
+    },
+    {
+      "path": "vita3k/renderer/src/creation.cpp",
+      "hunk": 0,
+      "strategy": "retained Plus unless explicit iOS integration recorded in resolver"
+    },
+    {
+      "path": "vita3k/renderer/src/texture/cache.cpp",
+      "hunk": 3,
+      "strategy": "retained Plus unless explicit iOS integration recorded in resolver"
+    },
+    {
+      "path": "vita3k/renderer/src/texture/cache.cpp",
+      "hunk": 2,
+      "strategy": "retained Plus unless explicit iOS integration recorded in resolver"
+    },
+    {
+      "path": "vita3k/renderer/src/texture/cache.cpp",
+      "hunk": 1,
+      "strategy": "retained Plus unless explicit iOS integration recorded in resolver"
+    },
+    {
+      "path": "vita3k/renderer/src/texture/cache.cpp",
+      "hunk": 0,
+      "strategy": "retained Plus unless explicit iOS integration recorded in resolver"
+    },
+    {
+      "path": "vita3k/renderer/src/vulkan/pipeline_cache.cpp",
+      "hunk": 2,
+      "strategy": "retained Plus unless explicit iOS integration recorded in resolver"
+    },
+    {
+      "path": "vita3k/renderer/src/vulkan/pipeline_cache.cpp",
+      "hunk": 1,
+      "strategy": "retained Plus unless explicit iOS integration recorded in resolver"
+    },
+    {
+      "path": "vita3k/renderer/src/vulkan/pipeline_cache.cpp",
+      "hunk": 0,
+      "strategy": "retained Plus unless explicit iOS integration recorded in resolver"
+    },
+    {
+      "path": "vita3k/renderer/src/vulkan/renderer.cpp",
+      "hunk": 2,
+      "strategy": "retained Plus unless explicit iOS integration recorded in resolver"
+    },
+    {
+      "path": "vita3k/renderer/src/vulkan/renderer.cpp",
+      "hunk": 1,
+      "strategy": "retained Plus unless explicit iOS integration recorded in resolver"
+    },
+    {
+      "path": "vita3k/renderer/src/vulkan/renderer.cpp",
+      "hunk": 0,
+      "strategy": "retained Plus unless explicit iOS integration recorded in resolver"
+    },
+    {
+      "path": "vita3k/renderer/src/vulkan/screen_renderer.cpp",
+      "hunk": 1,
+      "strategy": "retained Plus unless explicit iOS integration recorded in resolver"
+    },
+    {
+      "path": "vita3k/renderer/src/vulkan/screen_renderer.cpp",
+      "hunk": 0,
+      "strategy": "retained Plus unless explicit iOS integration recorded in resolver"
+    },
+    {
+      "path": "vita3k/renderer/src/vulkan/texture.cpp",
+      "hunk": 2,
+      "strategy": "retained Plus unless explicit iOS integration recorded in resolver"
+    },
+    {
+      "path": "vita3k/renderer/src/vulkan/texture.cpp",
+      "hunk": 1,
+      "strategy": "retained Plus unless explicit iOS integration recorded in resolver"
+    },
+    {
+      "path": "vita3k/renderer/src/vulkan/texture.cpp",
+      "hunk": 0,
+      "strategy": "retained Plus unless explicit iOS integration recorded in resolver"
+    },
+    {
+      "path": "vita3k/renderer/include/renderer/texture_cache.h",
+      "hunk": 0,
+      "strategy": "retained Plus unless explicit iOS integration recorded in resolver"
+    },
+    {
+      "path": "vita3k/mem/src/mem.cpp",
+      "hunk": 2,
+      "strategy": "retained Plus unless explicit iOS integration recorded in resolver"
+    },
+    {
+      "path": "vita3k/mem/src/mem.cpp",
+      "hunk": 1,
+      "strategy": "retained Plus unless explicit iOS integration recorded in resolver"
+    },
+    {
+      "path": "vita3k/mem/src/mem.cpp",
+      "hunk": 0,
+      "strategy": "retained Plus unless explicit iOS integration recorded in resolver"
+    },
+    {
+      "path": "vita3k/mem/include/mem/state.h",
+      "hunk": 0,
+      "strategy": "retained Plus unless explicit iOS integration recorded in resolver"
+    },
+    {
+      "path": "vita3k/kernel/include/kernel/state.h",
+      "hunk": 1,
+      "strategy": "retained Plus unless explicit iOS integration recorded in resolver"
+    },
+    {
+      "path": "vita3k/kernel/include/kernel/state.h",
+      "hunk": 0,
+      "strategy": "retained Plus unless explicit iOS integration recorded in resolver"
+    },
+    {
+      "path": "vita3k/ime/include/ime/state.h",
+      "hunk": 0,
+      "strategy": "retained Plus unless explicit iOS integration recorded in resolver"
+    },
+    {
+      "path": "vita3k/display/src/display.cpp",
+      "hunk": 0,
+      "strategy": "retained Plus unless explicit iOS integration recorded in resolver"
+    },
+    {
+      "path": "vita3k/ctrl/src/ctrl.cpp",
+      "hunk": 0,
+      "strategy": "retained Plus unless explicit iOS integration recorded in resolver"
+    },
+    {
+      "path": "vita3k/cpu/src/cpu.cpp",
+      "hunk": 0,
+      "strategy": "retained Plus unless explicit iOS integration recorded in resolver"
+    },
+    {
+      "path": "vita3k/cpu/src/dynarmic_cpu.cpp",
+      "hunk": 4,
+      "strategy": "retained Plus unless explicit iOS integration recorded in resolver"
+    },
+    {
+      "path": "vita3k/cpu/src/dynarmic_cpu.cpp",
+      "hunk": 3,
+      "strategy": "retained Plus unless explicit iOS integration recorded in resolver"
+    },
+    {
+      "path": "vita3k/cpu/src/dynarmic_cpu.cpp",
+      "hunk": 2,
+      "strategy": "retained Plus unless explicit iOS integration recorded in resolver"
+    },
+    {
+      "path": "vita3k/cpu/src/dynarmic_cpu.cpp",
+      "hunk": 1,
+      "strategy": "retained Plus unless explicit iOS integration recorded in resolver"
+    },
+    {
+      "path": "vita3k/cpu/src/dynarmic_cpu.cpp",
+      "hunk": 0,
+      "strategy": "retained Plus unless explicit iOS integration recorded in resolver"
+    },
+    {
+      "path": "vita3k/cpu/include/cpu/impl/dynarmic_cpu.h",
+      "hunk": 0,
+      "strategy": "retained Plus unless explicit iOS integration recorded in resolver"
+    },
+    {
+      "path": "vita3k/codec/src/aac.cpp",
+      "hunk": 0,
+      "strategy": "retained Plus unless explicit iOS integration recorded in resolver"
+    },
+    {
+      "path": "vita3k/audio/src/impl/sdl_audio.cpp",
+      "hunk": 4,
+      "strategy": "retained Plus unless explicit iOS integration recorded in resolver"
+    },
+    {
+      "path": "vita3k/audio/src/impl/sdl_audio.cpp",
+      "hunk": 3,
+      "strategy": "retained Plus unless explicit iOS integration recorded in resolver"
+    },
+    {
+      "path": "vita3k/audio/src/impl/sdl_audio.cpp",
+      "hunk": 2,
+      "strategy": "retained Plus unless explicit iOS integration recorded in resolver"
+    },
+    {
+      "path": "vita3k/audio/src/impl/sdl_audio.cpp",
+      "hunk": 1,
+      "strategy": "retained Plus unless explicit iOS integration recorded in resolver"
+    },
+    {
+      "path": "vita3k/audio/src/impl/sdl_audio.cpp",
+      "hunk": 0,
+      "strategy": "retained Plus unless explicit iOS integration recorded in resolver"
+    }
+  ]
+}

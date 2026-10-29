@@ -1,0 +1,143 @@
+{
+  "directory": "..",
+  "folders": [
+    {
+      "name": "神秘海域 黄金深渊[PCSD00001][港版][中文][Mai233](系统设置为繁体)",
+      "file_count": 87,
+      "total_bytes": 2784108254,
+      "contents": [
+        {
+          "path": "PCSD00001",
+          "sfo": {
+            "APP_VER": "01.00",
+            "CATEGORY": "gd",
+            "CONTENT_ID": "HP9000-PCSD00001_00-0000000000000000",
+            "PSP2_SYSTEM_VER": 17104896,
+            "TITLE": "Uncharted Golden Abyss™",
+            "TITLE_ID": "PCSD00001",
+            "VERSION": "01.02"
+          },
+          "eboot": {
+            "bytes": 16384,
+            "sha256": "053467888fa2a6cc5d5b3aae475aa508a0104b235321a06ef741e8652864adf5",
+            "container": "SELF/SCE",
+            "limits": "Container recognition does not demonstrate successful SELF/PFS decryption or execution."
+          },
+          "sce_module": [
+            "libc.suprx",
+            "libc_m.suprx",
+            "libfios2.suprx",
+            "libfios2_m.suprx",
+            "libult.suprx"
+          ],
+          "license": {
+            "work_bin_present": false,
+            "bytes": 0
+          },
+          "gamedata_present": true
+        }
+      ]
+    },
+    {
+      "name": "神秘海域 黄金深渊[PCSD00001][港版][中英文][v1.03][NONPDRM](系统设置为繁体)",
+      "file_count": 181,
+      "total_bytes": 3184060199,
+      "contents": [
+        {
+          "path": "app\\PCSD00001",
+          "sfo": {
+            "APP_VER": "01.00",
+            "CATEGORY": "gd",
+            "CONTENT_ID": "HP9000-PCSD00001_00-0000000000000000",
+            "PSP2_SYSTEM_VER": 17104896,
+            "TITLE": "Uncharted Golden Abyss™",
+            "TITLE_ID": "PCSD00001",
+            "VERSION": "01.02"
+          },
+          "eboot": {
+            "bytes": 12096,
+            "sha256": "91b6497f6942404d246476327be50c693af1820ca587c494f54f69d824bf558e",
+            "container": "other",
+            "limits": "Container recognition does not demonstrate successful SELF/PFS decryption or execution."
+          },
+          "sce_module": [
+            "libc.suprx",
+            "libfios2.suprx",
+            "libult.suprx"
+          ],
+          "license": {
+            "work_bin_present": true,
+            "bytes": 512
+          },
+          "gamedata_present": true
+        },
+        {
+          "path": "patch\\PCSD00001",
+          "sfo": {
+            "APP_VER": "01.03",
+            "CATEGORY": "gp",
+            "CONTENT_ID": "HP9000-PCSD00001_00-0000000000000000",
+            "PSP2_SYSTEM_VER": 25231360,
+            "TITLE": "Uncharted Golden Abyss™",
+            "TITLE_ID": "PCSD00001",
+            "VERSION": "01.00"
+          },
+          "eboot": {
+            "bytes": 6048,
+            "sha256": "d084014652ecdb8ee803e2d475d815444d1f9b2c2bc02e382b059fa262342ccf",
+            "container": "other",
+            "limits": "Container recognition does not demonstrate successful SELF/PFS decryption or execution."
+          },
+          "sce_module": [
+            "libc.suprx",
+            "libfios2.suprx",
+            "libult.suprx"
+          ],
+          "license": {
+            "work_bin_present": false,
+            "bytes": 0
+          },
+          "gamedata_present": false
+        }
+      ]
+    }
+  ],
+  "archives": [
+    {
+      "name": "0200_港中_PCSD00001_神秘海域黄金深渊_0103.VPK",
+      "bytes": 2261145007,
+      "entries": 108,
+      "zip_crc_bad_entry": null,
+      "sfo": {
+        "APP_VER": "01.03",
+        "CATEGORY": "gp",
+        "CONTENT_ID": "HP9000-PCSD00001_00-0000000000000000",
+        "PSP2_SYSTEM_VER": 25231360,
+        "TITLE": "Uncharted Golden Abyss™",
+        "TITLE_ID": "PCSD00001",
+        "VERSION": "01.00"
+      },
+      "eboot": {
+        "bytes": 8704,
+        "sha256": "27ee888b00036660728a94d4ed91c881f21e97a90dc127d9654cee1702cd4930",
+        "container": "SELF/SCE",
+        "limits": "Container recognition does not demonstrate successful SELF/PFS decryption or execution."
+      },
+      "gamedata_present": true,
+      "sce_module": [
+        "sce_module/libfios3.suprx",
+        "sce_module/libult.suprx",
+        "sce_module/steroid.suprx"
+      ],
+      "license": {
+        "work_bin_present": false
+      },
+      "standalone_base_candidate": false
+    }
+  ],
+  "limits": [
+    "No device or desktop game execution performed.",
+    "No trusted external checksums supplied: absence of corruption is not established.",
+    "License matching/decryption is unverified; no license/key bytes are exported."
+  ]
+}

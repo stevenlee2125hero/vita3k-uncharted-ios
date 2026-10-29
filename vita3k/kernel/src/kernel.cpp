@@ -186,6 +186,10 @@ ThreadStatePtr KernelState::create_thread(MemState &mem, const char *name, Ptr<c
     {
         const std::lock_guard<std::mutex> lock(mutex);
         threads.emplace(thread->id, thread);
+    {
+        const std::lock_guard<std::mutex> snapshot_lock(thread_snapshot_mutex);
+        diagnostic_thread_snapshot.emplace(thread->id, thread);
+    }
     }
     thread_create_counter.fetch_add(1, std::memory_order_relaxed);
 
@@ -610,4 +614,14 @@ SceKernelModuleInfo *KernelState::find_module_by_addr(Address address) {
         }
     }
     return nullptr;
+}
+
+ThreadStatePtrs KernelState::snapshot_threads_for_diagnostics() {
+    const std::lock_guard<std::mutex> lock(thread_snapshot_mutex);
+    return diagnostic_thread_snapshot;
+}
+
+void KernelState::untrack_thread_for_diagnostics(const SceUID thread_id) {
+    const std::lock_guard<std::mutex> lock(thread_snapshot_mutex);
+    diagnostic_thread_snapshot.erase(thread_id);
 }

@@ -119,6 +119,9 @@ public:
     bool use_protect = false;
     // Scene the renderer is currently replaying
     uint64_t current_scene = 0;
+    // bumped by the backend on each new scene; when nonzero, a texture whose
+    // hash was already computed this scene is not re-hashed on later binds
+    uint64_t current_scene_timestamp = 0;
     YUVConversionCache yuv_conversion_cache;
     // use a separate sampler cache
     bool use_sampler_cache = false;
@@ -193,7 +196,7 @@ public:
     virtual void configure_sampler(size_t index, const SceGxmTexture &texture, bool no_linear) {}
 
     void upload_texture(const SceGxmTexture &gxm_texture, MemState &mem);
-    void cache_and_bind_texture(const SceGxmTexture &gxm_texture, MemState &mem);
+    void cache_and_bind_texture(const SceGxmTexture &gxm_texture, MemState &mem, bool force_upload = false);
 
     // is called by cache_and_bind_texture if use_sampler_cache is set to true
     virtual bool texture_supports_linear_filter() { return true; }

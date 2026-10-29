@@ -22,6 +22,7 @@
 
 #include <algorithm>
 #include <chrono>
+#include <cstdint>
 
 #define SDL_CHECK_EXT(condition, ret)                         \
     do {                                                      \
@@ -107,12 +108,17 @@ AudioOutPortPtr SDLAudioAdapter::open_port(int nb_channels, int freq, int nb_sam
     SDL_CHECK(SDL_GetAudioDeviceFormat(device_id, &dst_spec, &device_buffer_samples));
     const AudioStreamPtr stream(SDL_CreateAudioStream(&src_spec, &dst_spec), SDL_DestroyAudioStream);
     SDL_CHECK(stream);
-    SDL_CHECK(SDL_BindAudioStream(device_id, stream.get()));
     auto port = std::make_shared<SDLAudioOutPort>(stream, *this);
-    SDL_CHECK(SDL_SetAudioStreamGetCallback(stream.get(), SDLAudioAdapter::thread_wakeup_callback, port.get()));
     port->channels = nb_channels;
+    port->freq = freq;
+    port->len = nb_sample;
     port->len_microseconds = (nb_sample * 1'000'000ULL) / freq;
     port->len_bytes = nb_sample * nb_channels * sizeof(int16_t);
+    SDL_CHECK(SDL_BindAudioStream(device_id, stream.get()));
+    SDL_CHECK(SDL_SetAudioStreamGetCallback(stream.get(), SDLAudioAdapter::thread_wakeup_callback, port.get()));
+    LOG_INFO("SDL audio output opened: guest={} Hz/{} ch/{} frames, device={} Hz/{} ch/{} frames (format=0x{:X})",
+        freq, nb_channels, nb_sample, dst_spec.freq, dst_spec.channels, device_buffer_samples,
+        static_cast<unsigned>(dst_spec.format));
     switch_state(false);
     return port;
 }

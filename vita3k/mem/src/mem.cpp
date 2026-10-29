@@ -53,6 +53,12 @@ static std::atomic<bool> g_emulate_refused_jit_access{ false };
 
 constexpr uint32_t STANDARD_PAGE_SIZE = KiB(4);
 constexpr size_t TOTAL_MEM_SIZE = GiB(4);
+#if defined(VITA3K_PLATFORM_IOS)
+static uint64_t ios_guest_memory_limit = MiB(640);
+void set_ios_guest_memory_limit(uint64_t bytes) {
+    ios_guest_memory_limit = std::clamp<uint64_t>(bytes, MiB(512), MiB(2048));
+}
+#endif
 constexpr bool LOG_PROTECT = false;
 constexpr bool PAGE_NAME_TRACKING = true;
 
@@ -73,7 +79,36 @@ static std::string get_error_msg() {
 }
 #endif
 
+// A guest arena reserved before other large mappings (e.g. the iOS JIT region
+// pool) could fragment the address space; the next init() adopts it.
+static void *g_prereserved_memory = nullptr;
+
+bool prereserve_guest_memory() {
+#ifdef _WIN32
+    // Not needed on desktop: the address space is large and nothing else
+    // competes for it before init() runs.
+    return true;
+#else
+    if (g_prereserved_memory)
+        return true;
+    void *preferred_address = reinterpret_cast<void *>(1ULL << 34);
+    void *memory = mmap(preferred_address, TOTAL_MEM_SIZE, PROT_NONE, MAP_PRIVATE | MAP_ANONYMOUS, 0, 0);
+    if (memory == MAP_FAILED) {
+        LOG_CRITICAL("Guest memory prereservation failed: {}", get_error_msg());
+        return false;
+    }
+    g_prereserved_memory = memory;
+    return true;
+#endif
+}
+
 bool init(MemState &state, const bool use_page_table) {
+#if defined(VITA3K_PLATFORM_IOS)
+    state.allocation_budget.reset(ios_guest_memory_limit);
+    LOG_INFO("iOS guest RAM budget: {} MiB; virtual address space: 4096 MiB", ios_guest_memory_limit / MiB(1));
+#else
+    state.allocation_budget.reset(TOTAL_MEM_SIZE);
+#endif
 #ifdef _WIN32
     SYSTEM_INFO system_info = {};
     GetSystemInfo(&system_info);
@@ -98,16 +133,21 @@ bool init(MemState &state, const bool use_page_table) {
         }
     }
 #else
-    // http://man7.org/linux/man-pages/man2/mmap.2.html
-    const int prot = PROT_NONE;
-    const int flags = MAP_PRIVATE | MAP_ANONYMOUS;
-    const int fd = 0;
-    const off_t offset = 0;
-    // preferred_address is only a hint for mmap, if it can't use it, the kernel will choose itself the address
-    state.memory = Memory(static_cast<uint8_t *>(mmap(preferred_address, TOTAL_MEM_SIZE, prot, flags, fd, offset)), delete_memory);
-    if (state.memory.get() == MAP_FAILED) {
-        LOG_CRITICAL("mmap failed {}", get_error_msg());
-        return false;
+    if (g_prereserved_memory) {
+        state.memory = Memory(static_cast<uint8_t *>(g_prereserved_memory), delete_memory);
+        g_prereserved_memory = nullptr;
+    } else {
+        // http://man7.org/linux/man-pages/man2/mmap.2.html
+        const int prot = PROT_NONE;
+        const int flags = MAP_PRIVATE | MAP_ANONYMOUS;
+        const int fd = 0;
+        const off_t offset = 0;
+        // preferred_address is only a hint for mmap, if it can't use it, the kernel will choose itself the address
+        state.memory = Memory(static_cast<uint8_t *>(mmap(preferred_address, TOTAL_MEM_SIZE, prot, flags, fd, offset)), delete_memory);
+        if (state.memory.get() == MAP_FAILED) {
+            LOG_CRITICAL("mmap failed {}", get_error_msg());
+            return false;
+        }
     }
 #endif
 
@@ -232,16 +272,24 @@ bool debug_safe_write_guest(MemState &state, Address addr, const void *src, uint
 }
 
 static Address alloc_inner(MemState &state, uint32_t start_page, uint32_t page_count, const char *name, const bool force) {
+    const uint64_t requested_bytes = static_cast<uint64_t>(page_count) * STANDARD_PAGE_SIZE;
+    if (!page_count || requested_bytes >= TOTAL_MEM_SIZE || !state.allocation_budget.reserve(requested_bytes)) {
+        LOG_WARN("Guest RAM allocation rejected: requested={} bytes remaining={} bytes", requested_bytes, state.allocation_budget.remaining());
+        return 0;
+    }
     int page_num;
     if (force) {
         if (state.allocator.allocate_at(start_page, page_count) < 0) {
+            state.allocation_budget.release(requested_bytes);
             return 0;
         }
         page_num = start_page;
     } else {
         page_num = state.allocator.allocate_from(start_page, page_count, false);
-        if (page_num < 0)
+        if (page_num < 0) {
+            state.allocation_budget.release(requested_bytes);
             return 0;
+        }
     }
 
     const uint32_t size = page_count * STANDARD_PAGE_SIZE;
@@ -260,6 +308,16 @@ static Address alloc_inner(MemState &state, uint32_t start_page, uint32_t page_c
     const int ret = mprotect(commit_ptr, commit_size, PROT_READ | PROT_WRITE);
     LOG_CRITICAL_IF(ret == -1, "mprotect failed: {}", get_error_msg());
 #endif
+#ifdef _WIN32
+    const bool committed = ret != nullptr;
+#else
+    const bool committed = ret == 0;
+#endif
+    if (!committed) {
+        state.allocator.free(page_num, page_count);
+        state.allocation_budget.release(requested_bytes);
+        return 0;
+    }
     std::memset(&state.memory[addr], 0, size);
 
     AllocMemPage &page = state.alloc_table[page_num];
@@ -348,6 +406,7 @@ Address alloc_aligned(MemState &state, uint32_t size, const char *name, unsigned
 
     if (remnant_front) {
         state.allocator.free(page_num, remnant_front);
+        state.allocation_budget.release(static_cast<uint64_t>(remnant_front) * STANDARD_PAGE_SIZE);
         state.alloc_table[page_num].allocated = 0;
         if (PAGE_NAME_TRACKING) {
             state.page_name_map.erase(page_num);
@@ -590,6 +649,17 @@ bool handle_access_violation(MemState &state, uint8_t *addr, bool write) noexcep
     if (LOG_PROTECT) {
         fmt::print("Access: {}\n", log_hex(vaddr));
     }
+#ifdef VITA3K_PLATFORM_IOS
+    // With StikDebug attached every one of these traps costs a debug-link
+    // round trip, so any code path that still installs guest-memory
+    // protections must be found and removed.
+    const uint64_t trap_count = state.access_violations_handled.fetch_add(1, std::memory_order_relaxed) + 1;
+    if (trap_count == 1 || trap_count % 100 == 0)
+        LOG_WARN("Guest access-violation trap #{} handled at 0x{:X} (write={}); traps are debugger-delivered on iOS",
+            trap_count, vaddr, write);
+#else
+    state.access_violations_handled.fetch_add(1, std::memory_order_relaxed);
+#endif
 
     // never allow accesses to the null guard page - letting them through silently corrupts low memory
     if (vaddr < 0x1000) {
@@ -970,6 +1040,8 @@ void unpin_from_arena(MemState &mem, Address addr) {
 
 Address alloc(MemState &state, uint32_t size, const char *name, Address start_addr) {
     const std::lock_guard<std::mutex> lock(state.generation_mutex);
+    if (!size || static_cast<uint64_t>(size) + STANDARD_PAGE_SIZE - 1 > UINT32_MAX)
+        return 0;
     const uint32_t page_count = align(size, STANDARD_PAGE_SIZE) / STANDARD_PAGE_SIZE;
     const Address addr = alloc_inner(state, start_addr / STANDARD_PAGE_SIZE, page_count, name, false);
     return addr;
@@ -983,8 +1055,12 @@ Address alloc_at(MemState &state, Address address, uint32_t size, const char *na
 
 Address try_alloc_at(MemState &state, Address address, uint32_t size, const char *name) {
     const std::lock_guard<std::mutex> lock(state.generation_mutex);
+    const uint64_t expanded_size = static_cast<uint64_t>(size) + address % STANDARD_PAGE_SIZE;
+    if (!size || expanded_size + STANDARD_PAGE_SIZE - 1 > UINT32_MAX
+        || static_cast<uint64_t>(address) + size > TOTAL_MEM_SIZE)
+        return 0;
     const uint32_t wanted_page = address / STANDARD_PAGE_SIZE;
-    size += address % STANDARD_PAGE_SIZE;
+    size = static_cast<uint32_t>(expanded_size);
     const uint32_t page_count = align(size, STANDARD_PAGE_SIZE) / STANDARD_PAGE_SIZE;
     const Address addr = alloc_inner(state, wanted_page, page_count, name, true);
     return addr ? address : 0;
@@ -1016,6 +1092,7 @@ void free(MemState &state, Address address) {
     page.allocated = 0;
 
     state.allocator.free(page_num, page.size);
+    state.allocation_budget.release(static_cast<uint64_t>(page.size) * STANDARD_PAGE_SIZE);
     if (PAGE_NAME_TRACKING) {
         state.page_name_map.erase(page_num);
     }
@@ -1028,7 +1105,9 @@ void free(MemState &state, Address address) {
 }
 
 uint32_t mem_available(MemState &state) {
-    return state.allocator.free_slot_count(0, state.allocator.max_offset) * STANDARD_PAGE_SIZE;
+    const std::lock_guard lock(state.generation_mutex);
+    const uint64_t available = static_cast<uint64_t>(state.allocator.free_slot_count(0, state.allocator.max_offset)) * STANDARD_PAGE_SIZE;
+    return static_cast<uint32_t>(std::min(available, state.allocation_budget.remaining()));
 }
 
 const char *mem_name(Address address, MemState &state) {

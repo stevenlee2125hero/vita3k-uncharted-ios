@@ -100,6 +100,7 @@ COMMAND(handle_destroy_context) {
     if (renderer.context == ctx->get())
         renderer.context = renderer.live_contexts.empty() ? nullptr : renderer.live_contexts.back();
     ctx->reset();
+    renderer.context = nullptr;
 
     complete_command(renderer, helper, 0);
 }

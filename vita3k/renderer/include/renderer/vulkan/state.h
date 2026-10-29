@@ -67,6 +67,19 @@ struct VKState : public renderer::State {
     ScreenRenderer screen_renderer;
     OverlayRenderer overlay_renderer;
 
+    void request_screen_rebuild() override {
+        screen_renderer.need_rebuild = true;
+    }
+
+    // The present mode is baked into the swapchain, so a v-sync change only
+    // takes effect once the swapchain is rebuilt.
+    void set_vsync_state(bool enable) override {
+        const bool changed = vsync_enabled.load(std::memory_order_relaxed) != enable;
+        renderer::State::set_vsync_state(enable);
+        if (changed)
+            request_screen_rebuild();
+    }
+
     // Used for memory allocation and general query later.
     vk::PhysicalDevice physical_device;
     vk::PhysicalDeviceProperties physical_device_properties;
@@ -134,6 +147,21 @@ struct VKState : public renderer::State {
     BufferTrapping buffer_trapping;
     // modify the behavior of trapping on vertex buffers if there are shader stores
     bool has_shader_store = false;
+    // Whether BufferTrapping can rely on mprotect-based fault trapping to
+    // detect writes to double-buffered vertex/uniform/index data. False on
+    // iOS: a debugger stays attached for sideloaded JIT (StikDebug) and
+    // intercepts the access-violation trap before our handler reliably
+    // services it - the same issue that made fault-based surface dirty
+    // tracking unusable there (see can_mprotect_mapped_memory in
+    // surface_cache.h). When false, access_buffer always re-copies instead of
+    // trusting a "clean" flag that a missed fault would never clear -
+    // EXCEPT for shader-store buffers (access_buffer's always_trap param),
+    // which are never re-copied at all: those are written by the GPU
+    // directly, and blindly re-copying guest RAM over them every access
+    // clobbers that GPU-written data with the stale CPU-authored original.
+    // No mprotect is installed for them either when this is false, since
+    // nothing would service the resulting fault.
+    bool can_mprotect_buffer_trapping = true;
 
     // queue where we put requests that need to wait for the GPU
     Queue<WaitThreadRequest> request_queue;

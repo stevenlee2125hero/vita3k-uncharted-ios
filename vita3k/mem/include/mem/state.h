@@ -17,10 +17,12 @@
 
 #pragma once
 
+#include <mem/allocation_budget.h>
 #include <mem/allocator.h>
 #include <mem/functions.h>
 #include <mem/util.h>
 
+#include <atomic>
 #include <map>
 #include <memory>
 #include <mutex>
@@ -70,7 +72,8 @@ struct MemArenaPin {
 };
 
 struct MemState {
-    std::mutex generation_mutex;
+    mutable std::mutex generation_mutex;
+    mem::AllocationBudget allocation_budget;
     std::mutex protect_mutex;
 
     uint32_t host_page_size = 0;
@@ -94,4 +97,9 @@ struct MemState {
     uint64_t transition_count = 0;
     uint64_t transition_recopy_events = 0;
     uint64_t transition_recopy_events_fully_parked = 0;
+
+    // Diagnostic: guest access-violation traps handled by the protect system.
+    // On iOS each of these costs a debugger round trip, so the watchdog dump
+    // reports the count to correlate trap bursts with process-wide stalls.
+    std::atomic<uint64_t> access_violations_handled{ 0 };
 };

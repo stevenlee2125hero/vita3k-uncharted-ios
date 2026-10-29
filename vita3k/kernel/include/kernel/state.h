@@ -179,6 +179,13 @@ struct KernelState {
     static constexpr int EXCEPTION_HANDLER_MAX = 3;
     std::atomic<Address> exception_handlers[EXCEPTION_HANDLER_MAX]{};
     std::condition_variable thread_deleted_cond;
+    // Number of host thread bodies that have started and not yet released
+    // every ThreadState resource. The threads map alone is not enough for
+    // process_exit: an entry is erased before the ThreadState destructor
+    // frees the guest stack, so teardown could reset MemState while that
+    // free was still in flight (observed as a crash when quitting a second
+    // title on iOS).
+    std::atomic<int> running_thread_bodies{ 0 };
 
     SceUID get_next_uid() {
         return next_uid++;
@@ -189,6 +196,8 @@ struct KernelState {
     void load_process_param(MemState &mem, Ptr<uint32_t> ptr);
     ThreadStatePtr create_thread(MemState &mem, const char *name, Ptr<const void> entry_point = Ptr<const void>(0));
     ThreadStatePtr create_thread(MemState &mem, const char *name, Ptr<const void> entry_point, int init_priority, SceInt32 affinity_mask, int stack_size, const SceKernelThreadOptParam *option);
+    ThreadStatePtrs snapshot_threads_for_diagnostics();
+    void untrack_thread_for_diagnostics(SceUID thread_id);
 
     ThreadStatePtr get_thread(SceUID thread_id);
     Ptr<Ptr<void>> get_thread_tls_addr(MemState &mem, SceUID thread_id, int key);
@@ -227,6 +236,8 @@ struct KernelState {
     SceKernelModuleInfo *find_module_by_addr(Address address);
 
 private:
+    std::mutex thread_snapshot_mutex;
+    ThreadStatePtrs diagnostic_thread_snapshot;
     std::atomic<SceUID> next_uid{ 1 };
     std::map<SceUID, ThreadStatus> paused_threads_status;
     std::vector<ThreadStatePtr> world_stopped_threads;

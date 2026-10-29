@@ -31,6 +31,14 @@
 #include <algorithm>
 #include <array>
 #include <atomic>
+// oaknut is dynarmic's arm64 assembler and its iOS JIT region pool only exists
+// on arm64 devices. The x86_64 Simulator uses dynarmic's x64 backend, which
+// allocates its own code cache, so every oaknut path below is arm64-only.
+#if defined(VITA3K_PLATFORM_IOS) && defined(__aarch64__)
+#include <oaknut/code_block.hpp>
+#endif
+
+#include <algorithm>
 #include <bit>
 #include <chrono>
 #include <cstring>
@@ -87,6 +95,56 @@ public:
         return coproc_noop_callback();
     }
 };
+
+#if defined(VITA3K_PLATFORM_IOS) && defined(__aarch64__)
+namespace {
+
+void log_ios_jit_region_pool_event(oaknut::JitRegionPoolEvent event, std::size_t size, std::size_t available) {
+    switch (event) {
+    case oaknut::JitRegionPoolEvent::Take:
+        LOG_INFO("iOS JIT region pool take: size={} bytes available={}", size, available);
+        break;
+    case oaknut::JitRegionPoolEvent::Return:
+        LOG_INFO("iOS JIT region pool return: size={} bytes available={}", size, available);
+        break;
+    case oaknut::JitRegionPoolEvent::Miss:
+        LOG_INFO("iOS JIT region pool miss: size={} bytes available={}", size, available);
+        break;
+    case oaknut::JitRegionPoolEvent::Prewarm:
+        LOG_INFO("iOS JIT region pool prewarm: size={} bytes available={}", size, available);
+        break;
+    case oaknut::JitRegionPoolEvent::SessionLost:
+        LOG_CRITICAL("StikDebug JIT session lost - cannot prepare a new JIT region; reopen StikDebug and re-enable JIT");
+        if (auto logger = spdlog::default_logger())
+            logger->flush();
+        break;
+    }
+}
+
+} // namespace
+
+std::size_t prewarm_ios_jit_code_cache_pool(std::size_t target_count, std::size_t cache_size) {
+    oaknut::set_jit_region_pool_log_callback(&log_ios_jit_region_pool_event);
+    LOG_INFO("iOS JIT region pool prewarm starting: target={} size={} bytes ({} MiB each)",
+        target_count, cache_size, cache_size / (1024 * 1024));
+    const std::size_t available = oaknut::prewarm_jit_region_pool(cache_size, target_count);
+    LOG_INFO("iOS JIT region pool prewarm complete: target={} available={} size={} bytes",
+        target_count, available, cache_size);
+    return available;
+}
+#endif
+
+#if defined(VITA3K_PLATFORM_IOS)
+namespace {
+std::size_t ios_jit_cache_size = 16 * 1024 * 1024;
+}
+void set_ios_jit_cache_size(std::size_t bytes) {
+    ios_jit_cache_size = std::clamp<std::size_t>(bytes, 16 * 1024 * 1024, 128 * 1024 * 1024);
+}
+std::size_t get_ios_jit_cache_size() {
+    return ios_jit_cache_size;
+}
+#endif
 
 class ArmDynarmicCP15 : public Dynarmic::A32::Coprocessor {
     uint32_t tpidruro;
@@ -174,6 +232,13 @@ public:
         this->tpidruro = tpidruro;
     }
 
+    std::array<uint32_t, 3> save() const { return { tpidruro, sctlr, dacr }; }
+    void load(const std::array<uint32_t, 3> &values) {
+        tpidruro = values[0];
+        sctlr = values[1];
+        dacr = values[2];
+    }
+
     uint32_t get_tpidruro() const {
         return tpidruro;
     }
@@ -184,6 +249,7 @@ class ArmDynarmicCallback : public Dynarmic::A32::UserCallbacks {
 
     CPUState *parent;
     DynarmicCPU *cpu;
+    uint64_t ticks_remaining = 0;
 
 public:
     explicit ArmDynarmicCallback(CPUState &parent, DynarmicCPU &cpu)
@@ -632,10 +698,12 @@ public:
         cpu->jit->HaltExecution(Dynarmic::HaltReason::UserDefined8);
     }
 
-    void AddTicks(uint64_t ticks) override {}
+    void AddTicks(uint64_t ticks) override {
+        ticks_remaining = ticks >= ticks_remaining ? 0 : ticks_remaining - ticks;
+    }
 
     uint64_t GetTicksRemaining() override {
-        return 1ull << 60;
+        return cpu->time_sliced ? ticks_remaining : 1ull << 60;
     }
 };
 
@@ -643,6 +711,12 @@ Dynarmic::ExclusiveMonitor DynarmicCPU::shared_monitor(MAX_CORE_COUNT);
 
 std::unique_ptr<Dynarmic::A32::Jit> DynarmicCPU::make_jit() {
     Dynarmic::A32::UserConfig config{};
+#if defined(VITA3K_PLATFORM_IOS)
+    // One reusable executable cache per iOS execution slot. Sixteen MiB is
+    // above Dynarmic's approximate 8 MiB minimum; a full cache is recycled.
+    // The universal path also maps a same-sized writable alias.
+    config.code_cache_size = get_ios_jit_cache_size();
+#endif
     config.arch_version = Dynarmic::A32::ArchVersion::v7;
     config.callbacks = cb.get();
     if (parent->mem->use_page_table) {
@@ -664,21 +738,86 @@ std::unique_ptr<Dynarmic::A32::Jit> DynarmicCPU::make_jit() {
     }
     config.processor_id = core_id;
     config.optimizations = cpu_opt ? Dynarmic::all_safe_optimizations : Dynarmic::no_optimizations;
-    config.enable_cycle_counting = false;
+    config.enable_cycle_counting = time_sliced;
 
+#if defined(VITA3K_PLATFORM_IOS) && defined(__aarch64__)
+    // StikDebug services Oaknut's BRK #0xf00d while the JIT constructor maps
+    // its execution cache. Serialize this short boundary so simultaneous
+    // guest-thread creation cannot issue overlapping debugger requests.
+    static std::mutex jit_creation_mutex;
+    static uint64_t jit_creation_count = 0;
+    const std::lock_guard lock(jit_creation_mutex);
+    const uint64_t allocation_id = ++jit_creation_count;
+    LOG_INFO("iOS Dynarmic JIT cache #{} allocating: thread={} core={} size={} bytes ({} MiB)",
+        allocation_id, parent->thread_id, core_id, config.code_cache_size,
+        config.code_cache_size / (1024 * 1024));
+    auto jit = std::make_unique<Dynarmic::A32::Jit>(config);
+    LOG_INFO("iOS Dynarmic JIT cache #{} ready: thread={} core={} size={} bytes ({} MiB)",
+        allocation_id, parent->thread_id, core_id, config.code_cache_size,
+        config.code_cache_size / (1024 * 1024));
+    return jit;
+#else
     return std::make_unique<Dynarmic::A32::Jit>(config);
+#endif
 }
 
-DynarmicCPU::DynarmicCPU(CPUState *state, std::size_t processor_id, bool cpu_opt)
+DynarmicCPU::DynarmicCPU(CPUState *state, std::size_t processor_id, bool cpu_opt, bool time_sliced)
     : parent(state)
     , cb(std::make_unique<ArmDynarmicCallback>(*state, *this))
     , cp15(std::make_shared<ArmDynarmicCP15>())
     , core_id(processor_id)
-    , cpu_opt(cpu_opt) {
-    jit = make_jit();
+    , cpu_opt(cpu_opt)
+    , time_sliced(time_sliced) {
+#if defined(VITA3K_PLATFORM_IOS) && defined(__aarch64__)
+    // JIT code regions come from a fixed pool prepared while the debugger is
+    // attached. Defer the allocation until this core first executes so
+    // created-but-not-yet-started threads don't hold a region.
+    parked_ctx = std::make_unique<CPUContext>();
+#else
+    if (time_sliced)
+        parked_ctx = std::make_unique<CPUContext>();
+    else
+        jit = make_jit();
+#endif
 }
 
+void DynarmicCPU::rebind(CPUState *state) {
+    parent = state;
+    cb->parent = state;
+}
+
+std::array<uint32_t, 3> DynarmicCPU::save_cp15() const { return cp15->save(); }
+void DynarmicCPU::load_cp15(const std::array<uint32_t, 3> &values) { cp15->load(values); }
+
 DynarmicCPU::~DynarmicCPU() = default;
+
+void DynarmicCPU::ensure_jit() {
+    if (jit)
+        return;
+    jit = make_jit();
+    if (parked_ctx) {
+        const CPUContext ctx = *parked_ctx;
+        parked_ctx.reset();
+        load_context(ctx);
+    }
+}
+
+void DynarmicCPU::release_code_cache() {
+    if (!jit)
+        return;
+    parked_ctx = std::make_unique<CPUContext>(save_context());
+    jit.reset();
+}
+
+bool DynarmicCPU::ensure_code_cache() {
+    try {
+        ensure_jit();
+    } catch (const std::exception &e) {
+        LOG_CRITICAL("Cannot (re)create JIT code cache for thread {}: {}", parent->thread_id, e.what());
+        return false;
+    }
+    return true;
+}
 
 int DynarmicCPU::run() {
     // apply deferred logging changes now safely outside of jit->Run()
@@ -701,6 +840,14 @@ int DynarmicCPU::run() {
         if (rebuild)
             rebuild_jit();
     }
+    try {
+        ensure_jit();
+    } catch (const std::exception &e) {
+        LOG_CRITICAL("Cannot (re)create JIT code cache for thread {}: {}", parent->thread_id, e.what());
+        return -1;
+    }
+    // Bounded slices let one slot serve spinning and waiting guest threads.
+    cb->ticks_remaining = 10000;
     halted = false;
     break_ = false;
     crashed = false;
@@ -708,7 +855,7 @@ int DynarmicCPU::run() {
     Dynarmic::HaltReason halt_reason;
     do {
         halt_reason = jit->Run();
-    } while ((halt_reason == Dynarmic::HaltReason::Step) || (halt_reason == Dynarmic::HaltReason::CacheInvalidation));
+    } while (!time_sliced && ((halt_reason == Dynarmic::HaltReason::Step) || (halt_reason == Dynarmic::HaltReason::CacheInvalidation)));
 
     if (crashed)
         return -1;
@@ -717,7 +864,16 @@ int DynarmicCPU::run() {
 }
 
 int DynarmicCPU::step() {
+    try {
+        ensure_jit();
+    } catch (const std::exception &e) {
+        LOG_CRITICAL("Cannot (re)create JIT code cache for thread {}: {}", parent->thread_id, e.what());
+        return -1;
+    }
     parent->svc_called = false;
+    halted = false;
+    break_ = false;
+    cb->ticks_remaining = 1;
     jit->Step();
     return 0;
 }
@@ -762,26 +918,40 @@ bool DynarmicCPU::get_log_mem() {
 }
 
 void DynarmicCPU::stop() {
+    if (!jit)
+        return;
     jit->HaltExecution();
 }
 
 uint32_t DynarmicCPU::get_reg(uint8_t idx) {
+    if (!jit)
+        return parked_ctx ? parked_ctx->cpu_registers[idx] : 0;
     return jit->Regs()[idx];
 }
 
 uint32_t DynarmicCPU::get_sp() {
-    return jit->Regs()[13];
+    return get_reg(13);
 }
 
 uint32_t DynarmicCPU::get_pc() {
-    return jit->Regs()[15];
+    return get_reg(15);
 }
 
 void DynarmicCPU::set_reg(uint8_t idx, uint32_t val) {
+    if (!jit) {
+        if (parked_ctx)
+            parked_ctx->cpu_registers[idx] = val;
+        return;
+    }
     jit->Regs()[idx] = val;
 }
 
 void DynarmicCPU::set_cpsr(uint32_t val) {
+    if (!jit) {
+        if (parked_ctx)
+            parked_ctx->cpsr = val;
+        return;
+    }
     jit->SetCpsr(val);
 }
 
@@ -801,30 +971,42 @@ void DynarmicCPU::set_pc(uint32_t val) {
         set_cpsr(get_cpsr() & 0xFFFFFFDF);
         val = val & 0xFFFFFFFC;
     }
-    jit->Regs()[15] = val;
+    set_reg(15, val);
 }
 
 void DynarmicCPU::set_lr(uint32_t val) {
-    jit->Regs()[14] = val;
+    set_reg(14, val);
 }
 
 void DynarmicCPU::set_sp(uint32_t val) {
-    jit->Regs()[13] = val;
+    set_reg(13, val);
 }
 
 uint32_t DynarmicCPU::get_cpsr() {
+    if (!jit)
+        return parked_ctx ? parked_ctx->cpsr : 0;
     return jit->Cpsr();
 }
 
 uint32_t DynarmicCPU::get_fpscr() {
+    if (!jit)
+        return parked_ctx ? parked_ctx->fpscr : 0;
     return jit->Fpscr();
 }
 
 void DynarmicCPU::set_fpscr(uint32_t val) {
+    if (!jit) {
+        if (parked_ctx)
+            parked_ctx->fpscr = val;
+        return;
+    }
     jit->SetFpscr(val);
 }
 
 CPUContext DynarmicCPU::save_context() {
+    if (!jit)
+        return parked_ctx ? *parked_ctx : CPUContext{};
+
     CPUContext ctx;
     ctx.cpu_registers = jit->Regs();
     static_assert(sizeof(ctx.fpu_registers) == sizeof(jit->ExtRegs()));
@@ -836,6 +1018,10 @@ CPUContext DynarmicCPU::save_context() {
 }
 
 void DynarmicCPU::load_context(const CPUContext &ctx) {
+    if (!jit) {
+        parked_ctx = std::make_unique<CPUContext>(ctx);
+        return;
+    }
     jit->Regs() = ctx.cpu_registers;
     static_assert(sizeof(ctx.fpu_registers) == sizeof(jit->ExtRegs()));
     memcpy(jit->ExtRegs().data(), ctx.fpu_registers.data(), sizeof(ctx.fpu_registers));
@@ -844,19 +1030,26 @@ void DynarmicCPU::load_context(const CPUContext &ctx) {
 }
 
 uint32_t DynarmicCPU::get_lr() {
-    return jit->Regs()[14];
+    return get_reg(14);
 }
 
 float DynarmicCPU::get_float_reg(uint8_t idx) {
+    if (!jit)
+        return parked_ctx ? parked_ctx->fpu_registers[idx] : 0.0f;
     return std::bit_cast<float>(jit->ExtRegs()[idx]);
 }
 
 void DynarmicCPU::set_float_reg(uint8_t idx, float val) {
+    if (!jit) {
+        if (parked_ctx)
+            parked_ctx->fpu_registers[idx] = val;
+        return;
+    }
     jit->ExtRegs()[idx] = std::bit_cast<uint32_t>(val);
 }
 
 bool DynarmicCPU::is_thumb_mode() {
-    return jit->Cpsr() & 0x20;
+    return get_cpsr() & 0x20;
 }
 
 std::size_t DynarmicCPU::processor_id() const {
@@ -864,7 +1057,15 @@ std::size_t DynarmicCPU::processor_id() const {
 }
 
 void DynarmicCPU::invalidate_jit_cache(Address start, size_t length) {
+    // A released cache has nothing stale in it.
+    if (!jit)
+        return;
     jit->InvalidateCacheRange(start, length);
+}
+
+void DynarmicCPU::clear_translation_cache() {
+    if (jit)
+        jit->ClearCache();
 }
 
 static constexpr bool CLEAR_EXCLUSIVE_ONLY_WHEN_RESERVED = true;

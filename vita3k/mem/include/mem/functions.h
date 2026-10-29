@@ -24,6 +24,10 @@
 #include <string>
 
 struct MemState;
+#if defined(VITA3K_PLATFORM_IOS)
+// Startup-only setting; retains the full 32-bit guest virtual address space.
+void set_ios_guest_memory_limit(uint64_t bytes);
+#endif
 
 typedef std::function<bool(uint8_t *addr, bool write)> AccessViolationHandler;
 
@@ -49,6 +53,9 @@ constexpr MemPerm most_restrictive_perm(MemPerm a, MemPerm b) {
 }
 
 bool init(MemState &state, const bool use_page_table);
+// Reserve the guest address range ahead of time (before other large mappings
+// can fragment the address space); the next init() adopts the reservation.
+bool prereserve_guest_memory();
 void deinit_mem(MemState &state);
 Address alloc(MemState &state, uint32_t size, const char *name, Address start_addr = user_main_memory_start);
 Address alloc_aligned(MemState &state, uint32_t size, const char *name, unsigned int alignment, Address start_addr = user_main_memory_start);

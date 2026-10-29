@@ -24,7 +24,9 @@
 
 #include <gxm/functions.h>
 #include <mem/functions.h>
+#include <mem/guest_range.h>
 #include <mem/ptr.h>
+#include <mem/state.h>
 #include <util/align.h>
 #include <util/log.h>
 
@@ -638,6 +640,20 @@ void TextureCache::upload_texture(const SceGxmTexture &gxm_texture, MemState &me
             }
         }
 
+#ifdef VITA3K_PLATFORM_IOS
+        // sync_texture holds generation_mutex through this upload. Check later
+        // mips/faces too, since first-mip validation cannot cover their storage.
+        const uint64_t source_address = static_cast<uint64_t>(data.address()) + total_source_so_far;
+        const uint64_t source_size = (base_format == SCE_GXM_TEXTURE_BASE_FORMAT_YUV420P2
+                                         || base_format == SCE_GXM_TEXTURE_BASE_FORMAT_YUV420P3)
+            ? gxm::texture_size_first_mip(gxm_texture)
+            : (static_cast<uint64_t>(pixels_per_stride) * memory_height * gxm::bits_per_pixel(base_format) + 7) / 8;
+        if (!mem::valid_guest_range(source_address, source_size,
+                [&](uint32_t page) { return is_valid_addr(mem, page); })) {
+            LOG_WARN_ONCE("Skipping texture upload from invalid guest mip/face memory: 0x{:X}", source_address);
+            return;
+        }
+#endif
         // perform all needed conversions (formats not supported by modern GPUs)
         switch (base_format) {
         case SCE_GXM_TEXTURE_BASE_FORMAT_P4:
@@ -838,7 +854,7 @@ static constexpr TextureGxmDataRepr strided_texture_mask = {
     0xF3FFFFFF
 };
 
-void TextureCache::cache_and_bind_texture(const SceGxmTexture &gxm_texture, MemState &mem) {
+void TextureCache::cache_and_bind_texture(const SceGxmTexture &gxm_texture, MemState &mem, bool force_upload) {
     R_PROFILE(__func__);
 
     size_t index = 0;
@@ -888,6 +904,18 @@ void TextureCache::cache_and_bind_texture(const SceGxmTexture &gxm_texture, MemS
                 should_use_hash = protect_only_is_sufficient;
             }
         }
+
+#ifdef VITA3K_PLATFORM_IOS
+        // Never use fault-based texture invalidation on iOS, even when the
+        // config carries hashless-texture-cache from a desktop install: with
+        // StikDebug attached, every protection fault stops the whole process
+        // through the debug link, which is the observed multi-second stall
+        // pattern. Hashing costs a little CPU per bind but never traps.
+        if (!should_use_hash) {
+            should_use_hash = true;
+            LOG_INFO_ONCE("iOS texture cache forces hash-based invalidation (hashless-texture-cache ignored)");
+        }
+#endif
 
         uint64_t hash = 0;
         if (should_use_hash) {
@@ -940,6 +968,18 @@ void TextureCache::cache_and_bind_texture(const SceGxmTexture &gxm_texture, MemS
         info = gxm_it->second;
         configure = false;
         if (info->use_hash) {
+#ifdef VITA3K_PLATFORM_IOS
+            // Hash on every bind, exactly like desktop. A once-per-scene
+            // dedupe was tried here for iOS and could serve stale texture
+            // content when guest CPU writes race the renderer.
+            const uint64_t previous_hash = info->hash;
+            if (import_textures || export_textures)
+                info->hash = hash_texture_nostride(gxm_texture, mem);
+            else
+                info->hash = hash_texture_data(gxm_texture, info->texture_size, mem) ^ 1;
+
+            upload = previous_hash != info->hash;
+#else
             if (current_scene != 0 && info->last_hash_scene == current_scene) {
                 upload = false;
             } else {
@@ -952,6 +992,7 @@ void TextureCache::cache_and_bind_texture(const SceGxmTexture &gxm_texture, MemS
 
                 upload = previous_hash != info->hash;
             }
+#endif
         } else {
             range_protect_begin = align(gxm_texture.data_addr << 2, mem.host_page_size);
             range_protect_end = align_down((gxm_texture.data_addr << 2) + info->texture_size, mem.host_page_size);
@@ -978,6 +1019,7 @@ void TextureCache::cache_and_bind_texture(const SceGxmTexture &gxm_texture, MemS
         }
     }
     current_info = info;
+    upload = upload || force_upload;
 
     if (gxm_texture.data_addr == 0) {
         upload = false;

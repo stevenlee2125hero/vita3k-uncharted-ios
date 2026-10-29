@@ -27,6 +27,8 @@ struct CPUInterface {
 
     virtual int run() = 0;
     virtual void stop() = 0;
+    // Fault handler on the executing host thread: no locks or wakeups.
+    virtual void stop_from_signal() { stop(); }
 
     virtual uint32_t get_reg(uint8_t idx) = 0;
     virtual void set_reg(uint8_t idx, uint32_t val) = 0;
@@ -67,6 +69,17 @@ struct CPUInterface {
     virtual bool get_log_mem() = 0;
 
     virtual void clear_exclusive() = 0;
+
+    // Drop the backend's translation cache (and any pooled code region backing
+    // it) while preserving architectural state. Safe to call on a thread that
+    // is not executing; the cache is rebuilt on the next run()/step().
+    virtual void release_code_cache() {}
+
+    // Recreate a released translation cache now. Returns false if the backend
+    // cannot allocate one (e.g. the iOS JIT region pool is exhausted).
+    virtual bool ensure_code_cache() {
+        return true;
+    }
 
     virtual std::size_t processor_id() const {
         return 0;

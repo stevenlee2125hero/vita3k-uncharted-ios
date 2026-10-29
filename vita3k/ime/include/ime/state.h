@@ -44,10 +44,11 @@ struct Ime {
     ImeLangState lang;
     std::mutex mutex;
 
+    uint64_t generation = 0; // Distinguish consecutive native keyboard sessions.
     bool state = false;
-    SceImeEditText edit_text;
+    SceImeEditText edit_text{};
     SceImeRect preedit_rect{}; // seq-256: reported with SCE_IME_EVENT_CHANGE_SIZE
-    SceImeParam param;
+    SceImeParam param{};
     std::string enter_label;
     std::u16string str;
     uint32_t caps_level = 0;
@@ -66,6 +67,8 @@ struct Ime {
     }
 
     void deinit() {
+        std::lock_guard lock(mutex);
+        ++generation;
         state = false;
         edit_text = {};
         preedit_rect = {};

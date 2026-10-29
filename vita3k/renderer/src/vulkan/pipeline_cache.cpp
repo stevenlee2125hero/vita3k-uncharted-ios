@@ -16,6 +16,7 @@
 // 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
 
 #include <renderer/vulkan/pipeline_cache.h>
+#include <renderer/vulkan/pipeline_cache_data.h>
 
 #include <renderer/functions.h>
 #include <renderer/vulkan/functions.h>
@@ -51,6 +52,7 @@
 #include <sys/syscall.h>
 #include <unistd.h>
 #endif
+#include <algorithm>
 
 // don't use the dispatch version, because we always hash a small amount
 // with a known size
@@ -318,6 +320,13 @@ void PipelineCache::init(bool support_rasterized_order_access) {
         nb_worker_threads = 2;
     else
         nb_worker_threads = 1;
+#ifdef VITA3K_PLATFORM_IOS
+    // The first boot of a title in each app process pays the full
+    // SPIR-V -> MSL -> Metal binary cost for every pipeline while draws are
+    // skipped (the white-screen wait). The 6-core A-series chips land on two
+    // workers with the desktop table; give the burst more parallelism.
+    nb_worker_threads = std::max(nb_worker_threads, 4);
+#endif
 
     if (use_async_compilation) {
         // we could not initialize the worker threads previously
@@ -390,7 +399,10 @@ void PipelineCache::read_pipeline_cache() {
     LOG_INFO("Found pipeline cache, reading...");
 
     pipeline_cache_file.seekg(0, fs::ifstream::end);
-    size_t pipeline_size = pipeline_cache_file.tellg();
+    const auto file_size = pipeline_cache_file.tellg();
+    if (file_size < 0)
+        return;
+    size_t pipeline_size = static_cast<size_t>(file_size);
     pipeline_cache_file.seekg(0);
 
     if (pipeline_size < sizeof(uint32_t) + sizeof(size_t))
@@ -408,7 +420,6 @@ void PipelineCache::read_pipeline_cache() {
     size_t hashes_size = sizeof(magic_number) + sizeof(nb_hashes) + nb_hashes * sizeof(uint64_t);
     if (magic_number != pipeline_cache_magic || nb_hashes > pipeline_size / sizeof(uint64_t) || pipeline_size < hashes_size) {
         LOG_WARN("Pipeline cache is corrupted, ignoring it.");
-        pipeline_cache_file.close();
         return;
     }
     pipeline_size -= hashes_size;
@@ -417,8 +428,15 @@ void PipelineCache::read_pipeline_cache() {
     for (uint64_t &hash : hashes)
         read_integer(hash);
 
+    std::vector<uint64_t> hashes(nb_hashes);
+    pipeline_cache_file.read(reinterpret_cast<char *>(hashes.data()), nb_hashes * sizeof(uint64_t));
     std::vector<char> pipeline_data(pipeline_size);
     pipeline_cache_file.read(pipeline_data.data(), pipeline_size);
+    const auto &gpu = state.physical_device_properties;
+    if (!pipeline_cache_file || !compatible_pipeline_cache(pipeline_data.data(), pipeline_data.size(), gpu.vendorID, gpu.deviceID, gpu.pipelineCacheUUID.data())) {
+        LOG_INFO("Pipeline cache is incompatible with this GPU/driver or truncated; rebuilding it.");
+        return;
+    }
     pipeline_cache_file.close();
 
     VkPipelineCacheHeaderVersionOne header{};
@@ -441,8 +459,17 @@ void PipelineCache::read_pipeline_cache() {
         .pInitialData = pipeline_data.data()
     };
 
-    state.device.destroyPipelineCache(pipeline_cache);
-    pipeline_cache = state.device.createPipelineCache(cache_info);
+    // Keep the empty cache usable if the driver rejects the saved payload.
+    try {
+        const auto loaded_cache = state.device.createPipelineCache(cache_info);
+        state.device.destroyPipelineCache(pipeline_cache);
+        pipeline_cache = loaded_cache;
+    } catch (const vk::SystemError &error) {
+        LOG_WARN("Pipeline cache rejected by driver, rebuilding: {}", error.what());
+        return;
+    }
+    for (const auto hash : hashes)
+        pipelines[hash] = nullptr;
     LOG_INFO("Pipeline cache read and loaded");
 }
 
