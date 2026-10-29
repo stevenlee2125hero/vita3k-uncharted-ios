@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.22)
 
-# Build with the iOS 26 SDK, with runtime fallbacks back to iOS 16.
-set(VITA3K_IOS_DEPLOYMENT_TARGET "16.0" CACHE STRING "Minimum supported iOS version")
+# Build with the iOS 26 SDK, with a deployment baseline of iOS 26.
+set(VITA3K_IOS_DEPLOYMENT_TARGET "26.0" CACHE STRING "Minimum supported iOS version")
 set(VITA3K_IOS_BUNDLE_ID "com.stevenlee.unchartedpsv" CACHE STRING "Application bundle identifier")
 option(VITA3K_IOS_LINK_CORE "Link the first upstream Vita3K core slice" ON)
 
@@ -97,34 +97,7 @@ if(VITA3K_BUILD_IOS_UPSTREAM_CORE)
             "${CMAKE_SOURCE_DIR}/vita3k/shaders-builtin"
             "$<TARGET_BUNDLE_CONTENT_DIR:Vita3KiOS>/shaders-builtin")
 else()
-    add_subdirectory(core)
-
-    add_executable(Vita3KiOS MACOSX_BUNDLE
-        src/AppDelegate.mm
-        src/IOSInputAdapter.mm
-        src/IOSLogger.mm
-        src/IOSMetalRenderer.mm
-        src/main.mm
-    )
-
-    target_include_directories(Vita3KiOS PRIVATE include)
-    target_compile_features(Vita3KiOS PRIVATE cxx_std_23)
-    target_compile_options(Vita3KiOS PRIVATE
-        $<$<COMPILE_LANGUAGE:OBJC,OBJCXX>:-fobjc-arc>
-        -Wall
-        -Wextra
-    )
-    target_compile_definitions(Vita3KiOS PRIVATE VITA3K_PLATFORM_IOS=1)
-    target_link_libraries(Vita3KiOS PRIVATE
-        vita3k_ios_core
-        "-framework CoreGraphics"
-        "-framework Foundation"
-        "-framework GameController"
-        "-framework Metal"
-        "-framework MetalKit"
-        "-framework UIKit"
-        "-framework UniformTypeIdentifiers"
-    )
+    message(FATAL_ERROR "Only the complete Plus upstream core is supported in this project")
 endif()
 
 if(VITA3K_BUILD_IOS_UPSTREAM_CORE)

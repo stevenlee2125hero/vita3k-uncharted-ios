@@ -49,6 +49,7 @@ void SDLCALL SDLAudioAdapter::thread_wakeup_callback(void *userdata, SDL_AudioSt
     assert(userdata != nullptr);
     assert(stream != nullptr);
     SDLAudioOutPort *port = static_cast<SDLAudioOutPort *>(userdata);
+    port->adapter.state.device_pulls.fetch_add(1, std::memory_order_relaxed);
     const uint64_t now_us = steady_now_us();
     const uint64_t pull_us = static_cast<uint64_t>(port->adapter.device_buffer_samples) * 1000000 / std::max(port->adapter.dst_spec.freq, 1);
     const uint64_t play_end = std::max(port->play_end_us.load(std::memory_order_relaxed), now_us) + pull_us;
@@ -124,6 +125,7 @@ AudioOutPortPtr SDLAudioAdapter::open_port(int nb_channels, int freq, int nb_sam
 }
 
 void SDLAudioAdapter::audio_output(AudioOutPort &out_port, const void *buffer) {
+    state.output_calls.fetch_add(1, std::memory_order_relaxed);
     if (out_port.stopping)
         return;
 

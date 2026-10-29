@@ -17,7 +17,9 @@ add_library(
 
 # vc_runtime_checker.cpp is directly added from the main CMakeList (for some reason adding it here doesn't work)
 
-target_include_directories(util PUBLIC include)
+file(MAKE_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/generated/util")
+configure_file(include/util/fork_build.h.in "${CMAKE_CURRENT_BINARY_DIR}/generated/util/fork_build.h" @ONLY)
+target_include_directories(util PUBLIC include PRIVATE "${CMAKE_CURRENT_BINARY_DIR}/generated")
 target_link_libraries(util PUBLIC ${Boost_LIBRARIES} fmt spdlog http mem)
 target_link_libraries(util PRIVATE libcurl crypto SDL3::SDL3)
 if(ANDROID)

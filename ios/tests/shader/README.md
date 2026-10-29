@@ -3,8 +3,8 @@
 This optional host suite compiles the **actual** GXM and shader libraries with
 repository-pinned glslang, SPIRV-Cross, fmt, spdlog and Boost. It does not boot the
 emulator or require game files. The only replacement is the optional shader CLI
-file reader (`FileReader.cpp`, std::ifstream instead of SDL). Production logging
-and Boost path code are compiled.
+file reader (`FileReader.cpp`, std::ifstream instead of SDL). Production logging headers
+and Boost path sources are compiled; the full logging implementation is part of the application build.
 
 Requirements: CMake 3.22+, C++20 compiler, Python 3, SPIRV-Tools (`spirv-val` and
 `spirv-dis`). On Amazon Linux, `sudo dnf install spirv-tools` supplies the latter.

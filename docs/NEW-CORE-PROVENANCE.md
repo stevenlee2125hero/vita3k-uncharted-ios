@@ -25,7 +25,7 @@ tile layout, adds bounded partial-rectangle copies, transfer/host
 visibility and post-fence allocation-lifetime validation. This requires
 device verification; a compiled implementation is not a game success.
 
-Only the full upstream-core application target is used in delivery CI.
+The unused bootstrap interpreter, clear-screen demo and bootstrap fixtures have been removed. Only the full upstream-core application target is supported and used in delivery CI.
 The independent package is named Vita3K-Uncharted-iOS.ipa, with an embedded
 source-provenance record. The IPA verifier checks arm64 iPhoneOS identity,
 Bundle ID, minimum OS, CRC, full-core size, bundled SPIR-V and hashes.

@@ -1,9 +1,0 @@
-m10_homebrew:
-  attributes: 0
-  process_image: true
-  imagemodule: false
-  version:
-    major: 1
-    minor: 0
-  main:
-    start: module_start
