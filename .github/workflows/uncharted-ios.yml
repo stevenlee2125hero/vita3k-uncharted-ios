@@ -35,7 +35,7 @@ jobs:
           if-no-files-found: error
 
   native-support-tests:
-    name: Native IME text boundaries
+    name: Native lifetime and texture sanitizers
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4

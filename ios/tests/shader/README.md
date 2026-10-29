@@ -26,6 +26,9 @@ fixtures are also translated to iOS Metal source by pinned SPIRV-Cross.
 `ValidateSpirv.py` evaluates the small straight-line address fixture against
 independent native 64-bit sums; it is not a general shader or GPU emulator.
 
-This does **not** run Apple's Metal compiler, execute shaders on an iPhone,
-validate Vulkan synchronization on a GPU, or establish game compatibility/FPS.
+The suite also translates all ten bundled Plus SPIR-V shaders, including
+surface reinterpretation and depth alias packing, to iOS Metal. CI sends both
+builtin and synthetic Metal output to Apple's iPhoneOS Metal compiler.
+This does **not** execute shaders on an iPhone, validate Vulkan synchronization
+on a GPU, or establish game compatibility/FPS.
 The ordinary dependency-free suite remains `cmake -S ios/tests -B build-tests`.

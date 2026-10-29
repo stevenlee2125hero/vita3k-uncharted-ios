@@ -43,7 +43,7 @@ target_include_directories(shader_test_paths PRIVATE "${VITA_ROOT}/external/boos
 add_executable(shader_regression_tests ShaderRegressionTests.cpp FileReader.cpp)
 target_include_directories(shader_regression_tests PRIVATE "${VITA_ROOT}/external/glslang")
 target_link_libraries(shader_regression_tests PRIVATE shader SPIRV spirv-cross-msl shader_test_paths)
-add_test(NAME shader_regression_tests COMMAND shader_regression_tests "${CMAKE_CURRENT_BINARY_DIR}")
+add_test(NAME shader_regression_tests COMMAND shader_regression_tests "${CMAKE_CURRENT_BINARY_DIR}" "${VITA_ROOT}/vita3k/shaders-builtin")
 set_tests_properties(shader_regression_tests PROPERTIES TIMEOUT 60)
 find_package(Python3 REQUIRED COMPONENTS Interpreter)
 find_program(SPIRV_VAL spirv-val REQUIRED)

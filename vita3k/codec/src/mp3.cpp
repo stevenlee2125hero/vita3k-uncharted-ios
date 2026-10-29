@@ -202,8 +202,6 @@ Mp3DecoderState::Mp3DecoderState(uint32_t channels) {
 }
 
 Mp3DecoderState::~Mp3DecoderState() {
-    avcodec_close(context);
-    av_free(context);
-
-    context = nullptr;
+    // Freeing the context closes the decoder; avcodec_close was removed in FFmpeg 7.
+    avcodec_free_context(&context);
 }

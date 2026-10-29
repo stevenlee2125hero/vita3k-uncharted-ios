@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 #include <SPIRV/SpvBuilder.h>
 #include <fstream>
+#include <filesystem>
 #include <iostream>
 #include <map>
 #include <shader/gxp_parser.h>
@@ -277,9 +278,38 @@ static void test_translation(const std::string &directory) {
     compile(vertex, false, "empty_vertex", directory);
 }
 
+static void test_builtin_metal(const std::string &directory, const std::string &root) {
+    unsigned count = 0;
+    for (const auto &entry : std::filesystem::recursive_directory_iterator(root)) {
+        if (entry.path().extension() != ".spv")
+            continue;
+        std::ifstream input(entry.path(), std::ios::binary | std::ios::ate);
+        const auto size = static_cast<std::streamoff>(input.tellg());
+        require(size > 0 && size % 4 == 0, "invalid builtin SPIR-V size");
+        std::vector<uint32_t> words(static_cast<size_t>(size) / 4);
+        input.seekg(0);
+        input.read(reinterpret_cast<char *>(words.data()), size);
+        require(bool(input), "cannot read builtin SPIR-V");
+        spirv_cross::CompilerMSL msl(words);
+        auto options = msl.get_msl_options();
+        options.platform = spirv_cross::CompilerMSL::Options::iOS;
+        options.set_msl_version(2, 3);
+        msl.set_msl_options(options);
+        const auto name = "builtin_" + entry.path().filename().string();
+        std::ofstream output(directory + "/" + name + ".metal");
+        output << msl.compile();
+        require(bool(output), "cannot save builtin Metal shader");
+        std::filesystem::copy_file(entry.path(), directory + "/" + name,
+            std::filesystem::copy_options::overwrite_existing);
+        ++count;
+    }
+    require(count >= 10, "missing Plus builtin shaders");
+    std::cout << "Translated " << count << " builtin SPIR-V shaders to iOS Metal\n";
+}
+
 int main(int argc, char **argv) {
     try {
-        require(argc == 2, "pass shader output directory");
+        require(argc == 3, "pass shader output directory and builtin shader root");
         spdlog::set_level(spdlog::level::warn);
         test_uniform_layout();
         test_predicates_and_lod();
@@ -287,6 +317,7 @@ int main(int argc, char **argv) {
         test_translation(argv[1]);
         test_address_arithmetic(argv[1]);
         test_mapped_buffer_access(argv[1]);
+        test_builtin_metal(argv[1], argv[2]);
         std::cout << "Shader/GXM regression checks passed\n";
     } catch (const std::exception &error) {
         std::cerr << error.what() << '\n';
