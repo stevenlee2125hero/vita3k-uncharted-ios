@@ -37,6 +37,8 @@ jobs:
   native-support-tests:
     name: Native lifetime and texture sanitizers
     runs-on: ubuntu-latest
+    env:
+      UBSAN_OPTIONS: halt_on_error=1:print_stacktrace=1
     steps:
       - uses: actions/checkout@v4
       - run: |
