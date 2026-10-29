@@ -65,9 +65,9 @@ NSString *native_text(const std::u16string &value) {
     text.resize(ime::text_length(text, env.ime.param.maxTextLength));
     const auto caret = static_cast<uint32_t>(ime::text_length(text, self.editor.selectedRange.location));
     if (text != env.ime.str || caret != env.ime.edit_text.caretIndex) {
-        env.ime.event_id = text != env.ime.str || env.ime.event_id == SCE_IME_EVENT_UPDATE_TEXT
+        env.ime.push_event(text != env.ime.str
             ? SCE_IME_EVENT_UPDATE_TEXT
-            : SCE_IME_EVENT_UPDATE_CARET;
+            : SCE_IME_EVENT_UPDATE_CARET);
         env.ime.str = text;
         env.ime.edit_text.editIndex = 0;
         env.ime.edit_text.caretIndex = env.ime.caretIndex = caret;
@@ -118,7 +118,7 @@ NSString *native_text(const std::u16string &value) {
         dialog.result = SCE_COMMON_DIALOG_RESULT_OK;
         dialog.status = SCE_COMMON_DIALOG_STATUS_FINISHED;
     } else {
-        // Deliver UPDATE_TEXT before PRESS_ENTER; sceImeUpdate consumes one event.
+        // Wait for queued text updates before posting the terminal event.
         self.pendingEvent = SCE_IME_EVENT_PRESS_ENTER;
     }
     self.finished = YES;
@@ -181,14 +181,14 @@ void vita3k_ios_update_keyboard(EmuEnvState &env) {
         enterLabel = env.ime.param.enterLabel;
         title = isDialog ? [NSString stringWithUTF8String:env.common_dialog.ime.title] : @"Game text input";
         if (keyboard && keyboard.generation == generation && keyboard.pendingEvent
-            && env.ime.event_id == SCE_IME_EVENT_OPEN && env.ime.state) {
-            env.ime.event_id = keyboard.pendingEvent;
+            && env.ime.events.empty() && env.ime.state) {
+            env.ime.push_event(keyboard.pendingEvent);
             keyboard.pendingEvent = 0;
             keyboard.awaitingResponse = YES;
         } else if (keyboard && keyboard.generation == generation && keyboard.awaitingResponse
-            && env.ime.event_id == SCE_IME_EVENT_OPEN) {
+            && env.ime.events.empty()) {
             // Some games keep SceIme open after Enter (chat/search). Resume
-            // editing only after the guest has consumed the terminal event.
+            // editing after the guest pump has taken the terminal event.
             keyboard.awaitingResponse = NO;
             keyboard.finished = NO;
         }
