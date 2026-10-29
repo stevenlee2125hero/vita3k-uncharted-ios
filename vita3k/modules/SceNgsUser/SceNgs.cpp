@@ -477,7 +477,9 @@ EXPORT(SceUInt32, sceNgsSystemUpdate, ngs::System *system) {
     }
 
     note_audio_thread(emuenv.kernel, thread_id, export_name);
+    emuenv.ngs.update_calls.fetch_add(1, std::memory_order_relaxed);
     system->voice_scheduler.update(emuenv.kernel, emuenv.mem, thread_id);
+    emuenv.ngs.update_returns.fetch_add(1, std::memory_order_relaxed);
 
     return SCE_NGS_OK;
 }

@@ -338,43 +338,13 @@ static void dump_audio_state(EmuEnvState &emuenv) {
 }
 
 static void dump_ngs_state(EmuEnvState &emuenv) {
-    static std::mutex busy_observations_mutex;
-    static std::map<ngs::System *, std::chrono::steady_clock::time_point> busy_observations;
-    LOG_INFO("NGS: enabled={} systems={}", emuenv.cfg.current_config.ngs_enable, emuenv.ngs.systems.size());
-    for (ngs::System *system : emuenv.ngs.systems) {
-        if (!system)
-            continue;
-        ngs::VoiceScheduler &scheduler = system->voice_scheduler;
-        std::unique_lock<std::recursive_mutex> lock(scheduler.mutex, std::try_to_lock);
-        if (lock.owns_lock()) {
-            {
-                const std::lock_guard observation_lock(busy_observations_mutex);
-                busy_observations.erase(system);
-            }
-            LOG_INFO("NGS system: racks={} max_voices={} granularity={} sample_rate={} queued_voices={} pending_ops={} is_updating={}",
-                system->racks.size(), system->max_voices, system->granularity, system->sample_rate,
-                scheduler.queue.size(), scheduler.operations_pending.size(), scheduler.is_updating.load(std::memory_order_acquire));
-        } else {
-            const auto now = std::chrono::steady_clock::now();
-            std::chrono::milliseconds busy_for{ 0 };
-            bool consecutive = false;
-            {
-                const std::lock_guard observation_lock(busy_observations_mutex);
-                const auto [it, inserted] = busy_observations.emplace(system, now);
-                consecutive = !inserted;
-                busy_for = std::chrono::duration_cast<std::chrono::milliseconds>(now - it->second);
-            }
-            if (consecutive) {
-                LOG_ERROR("NGS system: racks={} max_voices={} granularity={} sample_rate={} (scheduler busy for at least {}ms across consecutive dumps, is_updating={})",
-                    system->racks.size(), system->max_voices, system->granularity, system->sample_rate,
-                    busy_for.count(), scheduler.is_updating.load(std::memory_order_acquire));
-            } else {
-                LOG_INFO("NGS system: racks={} max_voices={} granularity={} sample_rate={} (scheduler busy first observed, is_updating={})",
-                    system->racks.size(), system->max_voices, system->granularity, system->sample_rate,
-                    scheduler.is_updating.load(std::memory_order_acquire));
-            }
-        }
-    }
+    // The NGS registry and racks are guest-owned raw pointers without a
+    // snapshot/lifetime lock. The watchdog must not traverse them while
+    // guest threads can release them. Sample stable atomic progress instead.
+    LOG_INFO("NGS: enabled={} update_calls={} update_returns={}",
+        emuenv.cfg.current_config.ngs_enable,
+        emuenv.ngs.update_calls.load(std::memory_order_relaxed),
+        emuenv.ngs.update_returns.load(std::memory_order_relaxed));
 }
 
 void dump_guest_state(EmuEnvState &emuenv, const char *reason) {

@@ -20,6 +20,8 @@
 #include <mem/ptr.h>
 
 #include <vector>
+#include <atomic>
+#include <cstdint>
 
 struct MemState;
 
@@ -30,6 +32,9 @@ struct System;
 struct State {
     Ptr<VoiceDefinition> definitions;
     std::vector<System *> systems;
+    // Watchdog-safe progress; systems contains guest-owned, short-lived pointers.
+    std::atomic<uint64_t> update_calls{ 0 };
+    std::atomic<uint64_t> update_returns{ 0 };
 };
 
 bool init(State &ngs, MemState &mem);
