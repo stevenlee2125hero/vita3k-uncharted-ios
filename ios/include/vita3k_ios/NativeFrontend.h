@@ -121,7 +121,6 @@ enum class Vita3KIOSFrontendActionKind {
     ExportLibraryArchive,
     ExportGameArchive,
     ShowTrophies,
-    SetTrophyState,
     // title_id carries the title to remove from ux0 (app/patch/addcont).
     DeleteGame,
     Quit,
@@ -132,8 +131,6 @@ struct Vita3KIOSFrontendAction {
     std::string app_path;
     std::string title_id;
     std::string trophy_id;
-    int trophy_entry_id = 0;
-    bool trophy_earned = false;
     Vita3KIOSSettings settings;
     // Launch only: `settings` carries this title's per-game overrides and must
     // be applied for the session (without persisting to the global config).

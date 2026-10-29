@@ -50,22 +50,6 @@ struct TrophyListView: View {
                                     zoomedTrophy = trophy
                                 }
                             }
-                            .contextMenu {
-                                if collection.canEdit {
-                                    Button(role: trophy.earned ? .destructive : nil) {
-                                        Bridge.setTrophy(
-                                            trophy.trophyID,
-                                            earned: !trophy.earned,
-                                            collectionID: collection.trophySetID
-                                        )
-                                    } label: {
-                                        Label(
-                                            trophy.earned ? "Lock trophy" : "Unlock trophy",
-                                            systemImage: trophy.earned ? "lock.fill" : "lock.open.fill"
-                                        )
-                                    }
-                                }
-                            }
                     }
                     .listStyle(.insetGrouped)
                     .navigationTitle(collection.title)

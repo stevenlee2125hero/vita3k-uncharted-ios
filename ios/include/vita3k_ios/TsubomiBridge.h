@@ -202,12 +202,6 @@ NS_SWIFT_NAME(Bridge)
 /// Load and show this title's trophies.
 + (void)requestTrophiesForTitle:(NSString *)titleID NS_SWIFT_NAME(requestTrophies(titleID:));
 
-/// Change one trophy's stored progress and refresh the open trophy sheet.
-+ (void)setTrophy:(NSInteger)trophyID
-           earned:(BOOL)earned
-     collectionID:(NSString *)collectionID
-    NS_SWIFT_NAME(setTrophy(_:earned:collectionID:));
-
 /// Document pickers. Each returns immediately; results arrive as a status
 /// toast or an alert.
 + (void)presentGameImportPicker;

@@ -432,17 +432,6 @@ id bridge_games() {
     vita3k_ios_internal::queue_frontend_action(std::move(action));
 }
 
-+ (void)setTrophy:(NSInteger)trophyID
-           earned:(BOOL)earned
-     collectionID:(NSString *)collectionID {
-    Vita3KIOSFrontendAction action;
-    action.kind = Vita3KIOSFrontendActionKind::SetTrophyState;
-    action.trophy_id = to_std(collectionID);
-    action.trophy_entry_id = static_cast<int>(trophyID);
-    action.trophy_earned = earned;
-    vita3k_ios_internal::queue_frontend_action(std::move(action));
-}
-
 + (void)presentGameImportPicker {
     vita3k_ios_internal::present_game_picker();
 }

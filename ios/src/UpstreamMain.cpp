@@ -522,7 +522,7 @@ bool initialize_session(const fs::path &storage_path, Root &root_paths,
         Config cfg{};
         char arg0[] = "vita3k";
         char *argv[] = { arg0, nullptr };
-        if (config::init_config(cfg, 1, argv, root_paths, false) != Success) {
+        if (config::init_config(cfg, 1, argv, root_paths) != Success) {
             LOG_ERROR("Failed to initialise config.");
             emuenv.reset();
             return false;
@@ -2508,23 +2508,6 @@ std::optional<AppLaunchRequest> choose_boot_title(EmuEnvState &emuenv) {
             case Vita3KIOSFrontendActionKind::ShowTrophies:
                 show_trophies(emuenv, action->trophy_id, action->title_id, action->app_path);
                 break;
-            case Vita3KIOSFrontendActionKind::SetTrophyState: {
-                const bool changed = safe_identifier(action->trophy_id)
-                    && np::trophy::set_trophy_earned(trophy_source(emuenv),
-                        action->trophy_id, action->trophy_entry_id,
-                        action->trophy_earned);
-                if (!changed) {
-                    vita3k_ios_report_import_result(
-                        "Trophy progress could not be changed", false);
-                    break;
-                }
-                const auto updated = load_trophies(
-                    emuenv, action->trophy_id, "Trophies", {});
-                vita3k_ios_update_trophies(updated);
-                games = native_games(emuenv);
-                vita3k_ios_update_library(games, native_settings(emuenv));
-                break;
-            }
             case Vita3KIOSFrontendActionKind::DeleteGame: {
                 if (!safe_identifier(action->title_id, 16)) {
                     vita3k_ios_report_import_result("Delete rejected an invalid title ID", false);
