@@ -26,18 +26,26 @@ jobs:
           cmake --build build-shader --parallel 4
           ctest --test-dir build-shader --output-on-failure
 
+      - uses: actions/upload-artifact@v4
+        with:
+          name: plus-synthetic-shaders
+          path: |
+            build-shader/*.metal
+            build-shader/*.spv
+          if-no-files-found: error
+
   native-support-tests:
     name: Native IME text boundaries
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - run: |
-          cmake -S ios/tests -B build-native-tests
+          cmake -S ios/tests -B build-native-tests -DCMAKE_CXX_FLAGS="-fsanitize=address,undefined -fno-omit-frame-pointer"
           cmake --build build-native-tests
           ctest --test-dir build-native-tests --output-on-failure
 
   unsigned-ipa:
-    needs: native-support-tests
+    needs: [native-support-tests, shader-tests]
     name: Upstream core arm64 device link
     runs-on: macos-15
     timeout-minutes: 180
@@ -90,6 +98,18 @@ jobs:
             exit 1
           }
           cmake --version
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: plus-synthetic-shaders
+          path: artifacts/shader-tests
+      - name: Compile full Plus synthetic GXP shaders with Apple Metal
+        run: |
+          shaders=(artifacts/shader-tests/*.metal)
+          test -f "${shaders[0]}"
+          for shader in "${shaders[@]}"; do
+            xcrun --sdk iphoneos metal -std=ios-metal2.3 -c "$shader" -o "${shader%.metal}.air"
+          done
 
       - name: Bootstrap pinned vcpkg
         run: |
