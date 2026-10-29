@@ -425,10 +425,6 @@ void PipelineCache::read_pipeline_cache() {
     pipeline_size -= hashes_size;
 
     std::vector<uint64_t> hashes(nb_hashes);
-    for (uint64_t &hash : hashes)
-        read_integer(hash);
-
-    std::vector<uint64_t> hashes(nb_hashes);
     pipeline_cache_file.read(reinterpret_cast<char *>(hashes.data()), nb_hashes * sizeof(uint64_t));
     std::vector<char> pipeline_data(pipeline_size);
     pipeline_cache_file.read(pipeline_data.data(), pipeline_size);
